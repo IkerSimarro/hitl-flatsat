@@ -180,7 +180,20 @@ COSMOS receives packets through two interfaces:
 | `FLATSAT_UMB` | HIL bridge | All telemetry, all rates. The AIT test path. |
 | `FLATSAT_RF` | Ground station software | What survived the RF link: flight-like, duty-cycle limited. |
 
-Both carry raw space packets over UDP, one packet per datagram. The UDP ports are allocated in the COSMOS configuration when the ground software is built (Phase 2); see open item OI-03.
+Both carry raw space packets over UDP, one packet per datagram.
+
+**UDP port allocation.** NOS3 already uses 4xxx–8xxx, 12000–12020 and 14242, so the FlatSat uses 9xxx:
+
+| Port | Listener | Traffic |
+|---|---|---|
+| 9010 | HIL bridge | Umbilical telecommands from COSMOS `FLATSAT_UMB` |
+| 9011 | COSMOS (`cosmos`) | Umbilical telemetry from the bridge |
+| 9020 | HIL bridge | SIL RF frames to the OBC, from the ground link emulator |
+| 9021 | Ground station software (`flatsat-gs`) | SIL RF frames from the OBC |
+| 9030 | Ground station software | RF telecommands from COSMOS `FLATSAT_RF` |
+| 9031 | COSMOS | RF telemetry from the ground station software |
+
+How the two interfaces are added to the NOS3 COSMOS configuration is open item OI-03.
 
 ## 4. Telemetry catalogue
 
@@ -401,7 +414,7 @@ The framing (COBS + CRC-16, header `type | bus | seq | status | addr`) is define
 
 ### 8.2 Time
 
-The OBC has no access to the NOS3 time bus, so the bridge forwards simulation time in `TIME` frames, and the OBC disciplines its clock to them. When no `TIME` frame has arrived for 5 s, the OBC free-runs and sets a flag in `OBC_HK`. This keeps OBC timestamps comparable with 42 truth for V&V. The bridge's source for simulation time is open item OI-02.
+The OBC has no access to the NOS3 time bus, so the bridge forwards simulation time in `TIME` frames, and the OBC disciplines its clock to them. When no `TIME` frame has arrived for 5 s, the OBC free-runs and sets a flag in `OBC_HK`. This keeps OBC timestamps comparable with 42 truth for V&V. The bridge joins the NOS3 time bus (`command` on `tcp://nos-engine-server:12001`), reads its tick count with `NE_bus_get_time()`, and converts it as the NOS3 sims do: absolute time = `absolute-start-time` + ticks × `sim-microseconds-per-tick` / 10⁶. It sends `TIME` only while the OBC link is up, since writes to a serial device nobody reads can block.
 
 ### 8.3 How the bridge maps frames to NOS3 (IF-02)
 
@@ -409,8 +422,9 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 |---|---|
 | UART, I2C, SPI, CAN | NOS Engine at `tcp://nos-engine-server:12000`, same bus names and master address as `hwlib` (see the bridge README) |
 | `TRQ_CMD` | UDP to `trq-sim:14242`, ASCII `"<index> <duty %>\n"` with duty as a float from −100 to 100. This is the format `hwlib`'s `libtrq` sends. |
-| `TO_PKT` / `CI_PKT` | UDP to/from COSMOS `FLATSAT_UMB` |
-| `RF_TX` / `RF_RX` | UDP to/from the ground station link emulator |
+| `TO_PKT` / `CI_PKT` | UDP to `cosmos:9011` / from port 9010 (COSMOS `FLATSAT_UMB`) |
+| `RF_TX` / `RF_RX` | UDP to `flatsat-gs:9021` / from port 9020 (ground station link emulator) |
+| `TIME` | Tick count read from the time bus (§8.2) |
 
 **NOS3 device allocation used by the OBC** (from `cfg/sims/sc-1-nos3-simulator.xml`):
 
@@ -444,7 +458,7 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | ID | Item | Owner | Due |
 |---|---|---|---|
 | OI-01 | ~~Machine-readable packet definition file~~ Closed: `flatsat_icd.yaml` + `tools/icd_gen.py` (§3.5) | Claude | Closed 2026-10-01 |
-| OI-02 | How the bridge obtains NOS3 simulation time for `TIME` frames (NOS Engine time client) | Claude | Phase 1 |
+| OI-02 | ~~How the bridge obtains NOS3 simulation time~~ Closed: NOS Engine time bus, §8.2 | Claude | Closed 2026-10-01 |
 | OI-03 | COSMOS interface ports, and how `FLATSAT_UMB`/`FLATSAT_RF` are added (`gsw/cosmos` is a nested NOS3 submodule); COSMOS must also fill in the command checksum (§3.2) | Claude | Phase 2 |
 | OI-04 | Confirm the current Spanish 868 MHz short-range-device rules (frequency, power, duty cycle) | Iker | Before first RF transmission |
 | OI-05 | ~~Confirm the coarse sun sensor bus~~ Closed: `i2c_2` @ 0x40 | Claude | Closed 2026-10-01 |
@@ -457,3 +471,4 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 |---|---|---|
 | 1.0 draft | 2026-10-01 | First issue |
 | 1.0 draft b | 2026-10-01 | Added §3.5 and the generated layouts; `HEARTBEAT` reordered so `UPTIME` is 4-byte aligned; closed OI-01 and OI-05 |
+| 1.0 draft c | 2026-10-01 | UDP port allocation (§3.6); time source defined (§8.2); bridge implements §8; closed OI-02 |
