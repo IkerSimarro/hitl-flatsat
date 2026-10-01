@@ -41,6 +41,6 @@ cmd("EPS_SWITCH", SWITCH_ID=1, STATE=0)
 cmd("COMMS_SET_TX_POWER", POWER=-3)
 PY
 
-docker run --rm -v $ROOT:$ROOT -v $WORK:$WORK -w /tmp ballaerospace/cosmos:4.5.0 \
+docker run --rm -v $ROOT:$ROOT -v $WORK:$WORK -w /tmp -e COSMOS_USERPATH=$WORK ballaerospace/cosmos:4.5.0 \
     ruby $ROOT/tests/cosmos/check_defs.rb $ROOT/ground/cosmos/FLATSAT/cmd_tlm $WORK/packets.txt 2>&1 \
     | grep -v '^[IW], '
