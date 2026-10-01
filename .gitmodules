@@ -1,0 +1,4 @@
+[submodule "nos3"]
+	path = nos3
+	url = https://github.com/IkerSimarro/nos3.git
+	branch = hitl
