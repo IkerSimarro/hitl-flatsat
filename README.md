@@ -19,7 +19,7 @@ A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, 
 | Path | Contents |
 |---|---|
 | `nos3/` | Submodule: [fork of NOS3](https://github.com/IkerSimarro/nos3) (`hitl` branch). Adds the HIL bridge component (`components/hil_bridge`) and the `HIL=1` launch mode. |
-| `firmware/` | Subsystem firmware with Linux (software-in-the-loop) and Pico SDK backends. So far: the generated interface header `common/include/flatsat_icd.h`. |
+| `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN); `tests/`: unit tests on a fake HAL. Pico backend *(planned)*. |
 | `ground/` | Ground station software *(planned)*; generated Python codec `flatsat_icd.py` and COSMOS definitions `cosmos/FLATSAT/` |
 | `tests/` | Unit tests and the COSMOS definition cross-check; test procedures and the automated campaign *(planned)* |
 | `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft) with generated [byte layouts](docs/icd/ICD_layouts.md); test plan and reports, defect log, design notes *(planned)* |
