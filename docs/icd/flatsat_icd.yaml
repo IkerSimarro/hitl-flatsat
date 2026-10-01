@@ -1,0 +1,287 @@
+# HITL FlatSat — machine-readable interface definitions
+#
+# Source of truth for the byte layouts referenced by ICD.md sections 4, 5 and 6.
+# After editing, regenerate the derived files:
+#     python3 tools/icd_gen.py
+# CI runs `python3 tools/icd_gen.py --check` to make sure generated files are up to date.
+#
+# Field types: u8 u16 u32 i8 i16 i32 f32 char (char needs a count = string length)
+# Optional field keys: count (array length), units, enum (name of an enum below), desc
+# Every field must be naturally aligned within its payload; add explicit spare fields if needed.
+
+version: "1.0"
+
+enums:
+  mode:
+    desc: "System mode (ICD 5.1)"
+    values: {SAFE: 0, DETUMBLE: 1, SUN_POINT: 2, LOW_POWER: 3, TEST: 4}
+  mode_reason:
+    desc: "Why the last mode change happened"
+    values: {BOOT: 0, COMMAND: 1, FAULT: 2, AUTO_RATES_HIGH: 3, AUTO_CONVERGED: 4, LOW_BATTERY: 5, NODE_LOST: 6}
+  reset_cause:
+    values: {POWER_ON: 0, WATCHDOG: 1, COMMAND: 2, UNKNOWN: 3}
+  severity:
+    values: {DEBUG: 0, INFO: 1, WARNING: 2, ERROR: 3, CRITICAL: 4}
+  time_source:
+    values: {FREE_RUNNING: 0, UMBILICAL: 1}
+  adcs_mode:
+    values: {OFF: 0, BDOT: 1, SUN_POINT: 2, MANUAL: 3}
+  charge_state:
+    values: {IDLE: 0, CHARGING: 1, FULL: 2}
+  rw_ctrl_mode:
+    values: {OFF: 0, SPEED: 1, DUTY: 2}
+  node:
+    values: {OBC: 1, ADCS: 2, EPS: 3}
+  node_state:
+    values: {BOOT: 0, NOMINAL: 1, SAFE: 2, FAULT: 3}
+  node_cmd:
+    values: {PING: 1, RESET: 2, ENTER_SAFE: 3}
+  switch_state:
+    values: {OFF: 0, ON: 1}
+
+# CCSDS telemetry packets (ICD 3.1 header + payload below)
+telemetry:
+  - name: OBC_HK
+    mid: 0x0A00
+    desc: "OBC housekeeping"
+    fields:
+      - {name: UPTIME, type: u32, units: s}
+      - {name: CMD_ACCEPT_COUNT, type: u16}
+      - {name: CMD_REJECT_COUNT, type: u16}
+      - {name: LAST_CMD_MID, type: u16}
+      - {name: LAST_CMD_FC, type: u8}
+      - {name: MODE, type: u8, enum: mode}
+      - {name: MODE_REASON, type: u8, enum: mode_reason}
+      - {name: RESET_CAUSE, type: u8, enum: reset_cause}
+      - {name: RESET_COUNT, type: u16}
+      - {name: CPU_LOAD, type: u8, units: "%"}
+      - {name: NODE_ALIVE_MASK, type: u8, desc: "Bit n set = node n heartbeat seen in the last 3 s"}
+      - {name: TIME_SOURCE, type: u8, enum: time_source}
+      - {name: LINK_FLAGS, type: u8, desc: "Bit 0 umbilical up, bit 1 RF contact"}
+      - {name: CAN_TX_COUNT, type: u32}
+      - {name: CAN_RX_COUNT, type: u32}
+      - {name: CAN_ERROR_COUNT, type: u16}
+      - {name: CAN_TEC, type: u8, desc: "MCP2515 transmit error counter"}
+      - {name: CAN_REC, type: u8, desc: "MCP2515 receive error counter"}
+      - {name: EVENT_COUNT, type: u16}
+      - {name: SPARE, type: u16}
+
+  - name: BEACON
+    mid: 0x0A01
+    desc: "Compact health beacon, sent over RF every 10 s"
+    fields:
+      - {name: UPTIME, type: u32, units: s}
+      - {name: MODE, type: u8, enum: mode}
+      - {name: FAULT_FLAGS, type: u8}
+      - {name: CMD_ACCEPT_COUNT, type: u16}
+      - {name: SIM_BATT_MV, type: u16, units: mV, desc: "Simulated spacecraft battery (NOS3)"}
+      - {name: REAL_BATT_MV, type: u16, units: mV, desc: "FlatSat battery (EPS node)"}
+      - {name: BODY_RATE, type: u16, units: mrad/s, desc: "Estimated body-rate magnitude"}
+      - {name: ECLIPSE, type: u8}
+      - {name: NODE_ALIVE_MASK, type: u8}
+      - {name: EVENT_COUNT, type: u16}
+      - {name: SPARE, type: u16}
+
+  - name: EVENT
+    mid: 0x0A02
+    desc: "Asynchronous event message"
+    fields:
+      - {name: EVENT_ID, type: u16}
+      - {name: SEVERITY, type: u8, enum: severity}
+      - {name: SPARE, type: u8}
+      - {name: TEXT, type: char, count: 64}
+
+  - name: ADCS_STATE
+    mid: 0x0A10
+    desc: "ADCS estimates and actuator commands"
+    fields:
+      - {name: ADCS_MODE, type: u8, enum: adcs_mode}
+      - {name: SUN_VALID, type: u8}
+      - {name: CONVERGED, type: u8}
+      - {name: SPARE, type: u8}
+      - {name: RATE_EST, type: f32, count: 3, units: rad/s}
+      - {name: MAG_BODY, type: f32, count: 3, units: T}
+      - {name: SUN_BODY, type: f32, count: 3, desc: "Unit vector"}
+      - {name: POINTING_ERROR, type: f32, units: rad}
+      - {name: RW_CMD_SPEED, type: f32, count: 3, units: rad/s}
+      - {name: RW_SIM_SPEED, type: f32, count: 3, units: rad/s}
+      - {name: TRQ_DUTY, type: i16, count: 3, units: "0.01 %"}
+      - {name: SPARE2, type: i16}
+      - {name: PHYS_RW_CMD_SPEED, type: f32, units: rad/s}
+      - {name: PHYS_RW_MEAS_SPEED, type: f32, units: rad/s}
+
+  - name: ADCS_SENSORS
+    mid: 0x0A11
+    desc: "ADCS sensor readings in SI units"
+    fields:
+      - {name: VALID_MASK, type: u16, desc: "Bit 0 IMU, 1 MAG, 2 FSS, 3 CSS, 4 star tracker, 5 GPS"}
+      - {name: SPARE, type: u16}
+      - {name: IMU_RATE, type: f32, count: 3, units: rad/s}
+      - {name: IMU_ACCEL, type: f32, count: 3, units: m/s2}
+      - {name: MAG, type: f32, count: 3, units: T}
+      - {name: FSS_ALPHA, type: f32, units: rad}
+      - {name: FSS_BETA, type: f32, units: rad}
+      - {name: CSS, type: f32, count: 6, desc: "Normalised coarse sun sensor outputs"}
+      - {name: ST_QUAT, type: f32, count: 4}
+      - {name: GPS_POS_ECEF, type: f32, count: 3, units: m}
+      - {name: GPS_VEL_ECEF, type: f32, count: 3, units: m/s}
+      - {name: GPS_WEEK, type: u16}
+      - {name: SPARE2, type: u16}
+      - {name: GPS_SOW, type: f32, units: s, desc: "GPS seconds of week"}
+
+  - name: EPS_SIM
+    mid: 0x0A20
+    desc: "Simulated spacecraft power (NOS3 EPS sim)"
+    fields:
+      - {name: BATT_V, type: f32, units: V}
+      - {name: BATT_TEMP, type: f32, units: degC}
+      - {name: BUS_3V3, type: f32, units: V}
+      - {name: BUS_5V0, type: f32, units: V}
+      - {name: BUS_12V, type: f32, units: V}
+      - {name: EPS_TEMP, type: f32, units: degC}
+      - {name: SA_V, type: f32, units: V}
+      - {name: SA_TEMP, type: f32, units: degC}
+      - {name: SWITCH_MASK, type: u8}
+      - {name: ECLIPSE, type: u8}
+      - {name: SPARE, type: u16}
+
+  - name: EPS_REAL
+    mid: 0x0A21
+    desc: "FlatSat measured power (EPS node)"
+    fields:
+      - {name: RAIL_MV, type: u16, count: 3, units: mV, desc: "Rail 0 battery out, 1 OBC + radio, 2 ADCS node"}
+      - {name: RAIL_MA, type: i16, count: 3, units: mA}
+      - {name: RAIL_MW, type: u16, count: 3, units: mW}
+      - {name: BATT_MV, type: u16, units: mV}
+      - {name: BATT_MA, type: i16, units: mA}
+      - {name: CHARGE_STATE, type: u8, enum: charge_state}
+      - {name: SWITCH_MASK, type: u8, desc: "Bit 0 ADCS node supply, bit 1 wheel motor supply"}
+      - {name: SWITCH_FAULT_MASK, type: u8}
+      - {name: EPS_NODE_STATE, type: u8, enum: node_state}
+      - {name: SPARE, type: u16}
+      - {name: EPS_UPTIME, type: u32, units: s}
+
+  - name: COMMS_STATS
+    mid: 0x0A30
+    desc: "RF and umbilical link statistics"
+    fields:
+      - {name: RF_TX_FRAMES, type: u32}
+      - {name: RF_RX_FRAMES, type: u32}
+      - {name: RF_CRC_ERRORS, type: u16}
+      - {name: RF_REJECTED, type: u16}
+      - {name: LAST_RSSI, type: i16, units: dBm}
+      - {name: LAST_SNR, type: i8, units: "0.25 dB"}
+      - {name: CONTACT, type: u8}
+      - {name: DUTY_CYCLE, type: u16, units: "0.1 %", desc: "Airtime used in the last hour"}
+      - {name: TX_QUEUE_DEPTH, type: u16}
+      - {name: UMB_TX_PACKETS, type: u32}
+      - {name: UMB_RX_PACKETS, type: u32}
+
+  - name: PING_REPLY
+    mid: 0x0A31
+    desc: "Reply to OBC_PING, for latency measurement"
+    fields:
+      - {name: TOKEN, type: u32}
+      - {name: RX_SECONDS, type: u32, units: s, desc: "OBC time when the ping was received"}
+      - {name: RX_SUBSECONDS, type: u16, units: "2^-16 s"}
+      - {name: SPARE, type: u16}
+
+# CCSDS command packets (ICD 3.2 header + arguments below), grouped by MID
+commands:
+  - mid: 0x1A00
+    prefix: OBC
+    commands:
+      - {name: NOOP, fc: 0}
+      - {name: RESET_COUNTERS, fc: 1}
+      - name: SET_MODE
+        fc: 2
+        fields: [{name: MODE, type: u8, enum: mode}]
+      - name: SET_TIME
+        fc: 3
+        fields: [{name: SECONDS, type: u32, units: s}, {name: SUBSECONDS, type: u16, units: "2^-16 s"}]
+      - name: PING
+        fc: 4
+        fields: [{name: TOKEN, type: u32}]
+      - name: SET_TLM_PERIOD
+        fc: 5
+        fields: [{name: TLM_MID, type: u16}, {name: PERIOD, type: u16, units: ms, desc: "0 = off"}]
+      - name: DOWNLINK_PACKET
+        fc: 6
+        fields: [{name: TLM_MID, type: u16}]
+      - name: NODE_RESET
+        fc: 7
+        fields: [{name: NODE, type: u8, enum: node}]
+      - name: REBOOT
+        fc: 8
+        fields: [{name: MAGIC, type: u32, desc: "Must be 0x0B0075ED"}]
+
+  - mid: 0x1A10
+    prefix: ADCS
+    commands:
+      - {name: NOOP, fc: 0}
+      - name: SET_BDOT_GAIN
+        fc: 1
+        fields: [{name: GAIN, type: f32}]
+      - name: SET_SUN_GAINS
+        fc: 2
+        fields: [{name: KP, type: f32}, {name: KD, type: f32}]
+      - name: RW_MANUAL
+        fc: 3
+        fields: [{name: WHEEL, type: u8}, {name: SPARE, type: u8}, {name: SPARE2, type: u16}, {name: SPEED, type: f32, units: rad/s}]
+      - name: TRQ_MANUAL
+        fc: 4
+        fields: [{name: TORQUER, type: u8}, {name: SPARE, type: u8}, {name: DUTY, type: i16, units: "0.01 %"}]
+
+  - mid: 0x1A20
+    prefix: EPS
+    commands:
+      - {name: NOOP, fc: 0}
+      - name: SWITCH
+        fc: 1
+        fields: [{name: SWITCH_ID, type: u8}, {name: STATE, type: u8, enum: switch_state}]
+      - name: SIM_SWITCH
+        fc: 2
+        fields: [{name: SWITCH_ID, type: u8}, {name: STATE, type: u8, enum: switch_state}]
+
+  - mid: 0x1A30
+    prefix: COMMS
+    commands:
+      - {name: NOOP, fc: 0}
+      - name: SET_TX_POWER
+        fc: 1
+        fields: [{name: POWER, type: i8, units: dBm}]
+      - name: SET_BEACON_PERIOD
+        fc: 2
+        fields: [{name: PERIOD, type: u16, units: s}]
+
+# CAN bus messages (ICD 6.3). CAN ID = type << 4 | source node.
+can:
+  - {name: TIME_SYNC, type: 0x01, src: OBC, period_ms: 1000,
+     fields: [{name: SECONDS, type: u32, units: s}, {name: SUBSECONDS, type: u16, units: "2^-16 s"}]}
+  - {name: MODE, type: 0x02, src: OBC, period_ms: 1000,
+     fields: [{name: MODE, type: u8, enum: mode}, {name: FLAGS, type: u8}]}
+  - {name: FAULT, type: 0x04, src: ANY, period_ms: 0,
+     fields: [{name: CODE, type: u8}, {name: DETAIL, type: u8}, {name: VALUE, type: u16}]}
+  - {name: RW_CMD, type: 0x10, src: OBC, period_ms: 100,
+     fields: [{name: WHEEL, type: u8}, {name: CTRL_MODE, type: u8, enum: rw_ctrl_mode},
+              {name: SETPOINT, type: i16, desc: "rpm (SPEED) or 0.01 % (DUTY)"}, {name: SEQ, type: u8}]}
+  - {name: RW_TLM, type: 0x11, src: ADCS, period_ms: 100,
+     fields: [{name: WHEEL, type: u8}, {name: STATUS, type: u8}, {name: SPEED, type: i16, units: rpm},
+              {name: SETPOINT_ECHO, type: i16}, {name: DUTY, type: i8, units: "%"}, {name: SEQ_ECHO, type: u8}]}
+  - {name: EPS_RAIL, type: 0x20, src: EPS, period_ms: 1000,
+     fields: [{name: RAIL, type: u8}, {name: FLAGS, type: u8}, {name: VOLTAGE, type: u16, units: mV},
+              {name: CURRENT, type: i16, units: mA}, {name: POWER, type: u16, units: mW}]}
+  - {name: EPS_BATT, type: 0x21, src: EPS, period_ms: 1000,
+     fields: [{name: VOLTAGE, type: u16, units: mV}, {name: CURRENT, type: i16, units: mA},
+              {name: CHARGE_STATE, type: u8, enum: charge_state}, {name: FLAGS, type: u8}]}
+  - {name: EPS_SW_CMD, type: 0x28, src: OBC, period_ms: 0,
+     fields: [{name: SWITCH_ID, type: u8}, {name: STATE, type: u8, enum: switch_state}, {name: SEQ, type: u8}]}
+  - {name: EPS_SW_TLM, type: 0x29, src: EPS, period_ms: 1000,
+     fields: [{name: STATE_MASK, type: u8}, {name: FAULT_MASK, type: u8}, {name: SEQ_ECHO, type: u8}]}
+  - {name: HEARTBEAT, type: 0x70, src: ANY, period_ms: 1000,
+     fields: [{name: UPTIME, type: u32, units: s}, {name: STATE, type: u8, enum: node_state},
+              {name: TEC, type: u8}, {name: REC, type: u8}, {name: RESET_CAUSE, type: u8, enum: reset_cause}]}
+  - {name: NODE_CMD, type: 0x7E, src: OBC, period_ms: 0,
+     fields: [{name: TARGET, type: u8, enum: node}, {name: CMD, type: u8, enum: node_cmd}, {name: ARG, type: u16}]}
+  - {name: NODE_ACK, type: 0x7F, src: ANY, period_ms: 0,
+     fields: [{name: CMD, type: u8, enum: node_cmd}, {name: RESULT, type: u8}]}

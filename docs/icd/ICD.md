@@ -76,7 +76,7 @@ flowchart LR
 | IF-03 | OBC ↔ ADCS node ↔ EPS node | CAN 2.0A, 500 kbit/s | FlatSat CAN protocol | §6 |
 | IF-04 | OBC ↔ ground modem | LoRa, 869.525 MHz | FlatSat RF frame | §7 |
 | IF-05 | Ground modem ↔ ground station software | USB CDC serial | `hil_link` frames | §7.5 |
-| IF-06 | Bridge and ground station software ↔ COSMOS | UDP | CCSDS space packets (§3) | §3.5 |
+| IF-06 | Bridge and ground station software ↔ COSMOS | UDP | CCSDS space packets (§3) | §3.6 |
 | IF-07 | NOS3 truth sim → ground station software | UDP | `SIM_42_TRUTH` packet | §7.4 |
 
 ### 2.2 Real versus simulated
@@ -146,7 +146,32 @@ NOS3/cFS uses `0x08xx`–`0x09xx` for telemetry and `0x18xx`–`0x19xx` for comm
 
 Every packet in §4 and §5 fits within 249 bytes, so any packet can travel on either path.
 
-### 3.5 Delivery to COSMOS (IF-06)
+### 3.5 Single source of truth
+
+[`flatsat_icd.yaml`](flatsat_icd.yaml) defines every telemetry packet, command and CAN message field by field. `tools/icd_gen.py` generates all the artefacts from it, so firmware, ground software and COSMOS can't drift apart:
+
+| Generated file | Used by |
+|---|---|
+| `firmware/common/include/flatsat_icd.h` | Firmware: packed structs with size assertions, IDs, lengths, dispatch tables |
+| `ground/flatsat_icd.py` | Ground software and tests: encode/decode, checksums |
+| `ground/cosmos/FLATSAT/cmd_tlm/*.txt` | COSMOS telemetry and command definitions |
+| [`ICD_layouts.md`](ICD_layouts.md) | This document: byte-level layout tables |
+
+The generator rejects:
+- misaligned fields: every field must sit on a multiple of its own size, because packed floats at odd offsets can fault on the RP2350's floating-point load instructions;
+- duplicate IDs or function codes;
+- packets that exceed the RF limit, and CAN payloads over 8 bytes;
+- field names that are C or Python keywords.
+
+Checks that keep the generated files honest:
+
+| Check | What it verifies |
+|---|---|
+| `python3 tools/icd_gen.py --check` | Generated files are up to date |
+| `python3 -m unittest discover -s tests/unit` | Codec round trips, checksum rule, sizes match the C header |
+| `tests/cosmos/check_defs.sh` | COSMOS 4.5 decodes Python-encoded packets field for field |
+
+### 3.6 Delivery to COSMOS (IF-06)
 
 COSMOS receives packets through two interfaces:
 
@@ -173,7 +198,7 @@ Both carry raw space packets over UDP, one packet per datagram. The UDP ports ar
 | `0x0A30` | `COMMS_STATS` | 1 Hz | on request | RF frames sent/received, CRC errors, rejected frames, last RSSI/SNR, duty cycle used in the current hour (%), contact state |
 | `0x0A31` | `PING_REPLY` | on command | on command | Echoes the token from `OBC_PING`, plus the OBC receive and transmit timestamps. Used for latency measurement (V&V). |
 
-Exact field order and padding are fixed in the packet definition file that firmware and COSMOS are generated from (OI-01). This table defines content and rates.
+This table defines content and rates. Exact field order, types and offsets are in [ICD_layouts.md](ICD_layouts.md), generated from [flatsat_icd.yaml](flatsat_icd.yaml); see §3.5.
 
 ## 5. Command catalogue
 
@@ -245,9 +270,9 @@ All payloads are little-endian.
 | `0x11` | `0x112` | `RW_TLM` | ADCS → OBC | 100 ms | wheel `u8`, status `u8`, measured speed `i16` rpm, setpoint echo `i16`, duty `i8` %, sequence echo `u8` (8 B) |
 | `0x20` | `0x203` | `EPS_RAIL` | EPS → OBC | 1 s per rail | rail `u8`, flags `u8`, voltage `u16` mV, current `i16` mA, power `u16` mW (8 B) |
 | `0x21` | `0x213` | `EPS_BATT` | EPS → OBC | 1 s | voltage `u16` mV, current `i16` mA, charge state `u8` (0 idle, 1 charging, 2 full, read from the charger status pins), flags `u8` (6 B) |
-| `0x28` | `0x281` | `EPS_SW_CMD` | OBC → EPS | event | switch `u8`, state `u8`, sequence `u8` (3 B) |
+| `0x28` | `0x281` | `EPS_SW_CMD` | OBC → EPS | event | switch ID `u8`, state `u8`, sequence `u8` (3 B) |
 | `0x29` | `0x293` | `EPS_SW_TLM` | EPS → OBC | 1 s and on change | state mask `u8`, fault mask `u8`, sequence echo `u8` (3 B) |
-| `0x70` | `0x70n` | `HEARTBEAT` | each node → all | 1 s | node state `u8`, uptime `u32` s, TX error counter `u8`, RX error counter `u8`, reset cause `u8` (8 B) |
+| `0x70` | `0x70n` | `HEARTBEAT` | each node → all | 1 s | uptime `u32` s, node state `u8`, TX error counter `u8`, RX error counter `u8`, reset cause `u8` (8 B) |
 | `0x7E` | `0x7E1` | `NODE_CMD` | OBC → node | event | target node `u8`, command `u8` (1 ping, 2 reset, 3 enter safe), argument `u16` (4 B) |
 | `0x7F` | `0x7Fn` | `NODE_ACK` | node → OBC | event | command `u8`, result `u8` (2 B) |
 
@@ -418,9 +443,9 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 
 | ID | Item | Owner | Due |
 |---|---|---|---|
-| OI-01 | Machine-readable packet definition file, generating C headers and COSMOS definitions, to fix exact field layouts | Claude | Phase 1 |
+| OI-01 | ~~Machine-readable packet definition file~~ Closed: `flatsat_icd.yaml` + `tools/icd_gen.py` (§3.5) | Claude | Closed 2026-10-01 |
 | OI-02 | How the bridge obtains NOS3 simulation time for `TIME` frames (NOS Engine time client) | Claude | Phase 1 |
-| OI-03 | COSMOS interface ports, and how `FLATSAT_UMB`/`FLATSAT_RF` are added: `gsw/cosmos` is a nested NOS3 submodule | Claude | Phase 2 |
+| OI-03 | COSMOS interface ports, and how `FLATSAT_UMB`/`FLATSAT_RF` are added (`gsw/cosmos` is a nested NOS3 submodule); COSMOS must also fill in the command checksum (§3.2) | Claude | Phase 2 |
 | OI-04 | Confirm the current Spanish 868 MHz short-range-device rules (frequency, power, duty cycle) | Iker | Before first RF transmission |
 | OI-05 | ~~Confirm the coarse sun sensor bus~~ Closed: `i2c_2` @ 0x40 | Claude | Closed 2026-10-01 |
 | OI-06 | Stretch: SDLS authentication on the RF link using CryptoLib on the ground side | – | Stretch |
@@ -431,3 +456,4 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | Version | Date | Change |
 |---|---|---|
 | 1.0 draft | 2026-10-01 | First issue |
+| 1.0 draft b | 2026-10-01 | Added §3.5 and the generated layouts; `HEARTBEAT` reordered so `UPTIME` is 4-byte aligned; closed OI-01 and OI-05 |
