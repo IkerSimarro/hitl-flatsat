@@ -22,7 +22,7 @@ A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, 
 | `firmware/` | Subsystem firmware with Linux (software-in-the-loop) and Pico SDK backends *(planned)* |
 | `ground/` | Ground station software and COSMOS telemetry/command definitions *(planned)* |
 | `tests/` | Test procedures and the automated test campaign *(planned)* |
-| `docs/` | Interface control document, test plan and reports, defect log, design notes *(planned)* |
+| `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft); test plan and reports, defect log, design notes *(planned)* |
 | `hardware/` | Bill of materials, wiring diagram, harness definition *(planned)* |
 
 ## Getting started
