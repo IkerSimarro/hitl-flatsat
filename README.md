@@ -24,7 +24,7 @@ A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, 
 | `tests/` | Unit tests and the COSMOS definition cross-check; test procedures and the automated campaign *(planned)* |
 | `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft) with generated [byte layouts](docs/icd/ICD_layouts.md); test plan and reports, defect log, design notes *(planned)* |
 | `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml` |
-| `hardware/` | Bill of materials, wiring diagram, harness definition *(planned)* |
+| `hardware/` | [Bill of materials](hardware/BOM.md); wiring diagram and harness definition *(planned)* |
 
 ## Getting started
 

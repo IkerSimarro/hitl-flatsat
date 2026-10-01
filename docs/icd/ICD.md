@@ -257,7 +257,8 @@ The automatic transition thresholds are defined in the ADCS design note, not in 
 | Parameter | Value |
 |---|---|
 | Standard | CAN 2.0A (11-bit identifiers), classic frames, up to 8 data bytes |
-| Bit rate | 500 kbit/s. **Requires 3.3 V MCP2515 modules; verify the oscillator frequency (8 or 16 MHz) and set the bit timing to match.** |
+| Bit rate | 500 kbit/s |
+| Hardware | Waveshare Pico-CAN-B on each node: MCP2515 controller with a 16 MHz crystal and a 3.3 V SIT65HVD230 transceiver, on SPI0 (GP4–GP7). See the [BOM](../../hardware/BOM.md). |
 | Topology | Linear bus, OBC and EPS at the ends, 120 Ω termination at each end, a single twisted pair |
 | Nodes | 1 = OBC, 2 = ADCS node, 3 = EPS node. Node 0 is reserved. |
 | SIL equivalent | Linux SocketCAN virtual bus `vcan0` |
@@ -299,12 +300,12 @@ All payloads are little-endian.
 | 1 | OBC + LoRa radio |
 | 2 | ADCS node including the wheel motor |
 
-**Load switches on the EPS node:**
+**Fault-injection switches controlled by the EPS node** (DD-07):
 
-| Switch | What it powers |
+| Switch | What it controls |
 |---|---|
-| 0 | ADCS node supply (lets a test power-cycle a node) |
-| 1 | Wheel motor driver supply (lets a test cause a wheel failure) |
+| 0 | ADCS Pico RUN pin: held low, the node stays in reset (lets a test power-cycle a node) |
+| 1 | DRV8833 nSLEEP pin: low cuts motor drive (lets a test cause a wheel failure) |
 
 ### 6.4 Bus load
 
@@ -335,10 +336,10 @@ At a worst case of about 135 bits per 8-byte frame including bit stuffing, that'
 
 | Parameter | Value |
 |---|---|
-| Module | RFM95W (SX1276), 868 MHz variant |
+| Module | Waveshare Pico-LoRa-SX1262-868M (Semtech SX1262) on SPI1 (GP10–12) |
 | Frequency | 869.525 MHz, in the 869.40–869.65 MHz sub-band (ERC/REC 70-03: 10 % duty cycle, 500 mW ERP). **Confirm current Spanish rules before the first transmission (OI-04).** |
 | Modulation | LoRa, spreading factor 7, 125 kHz bandwidth, coding rate 4/5, 8-symbol preamble, explicit header, hardware CRC on |
-| Sync word | `0x12` (private network) |
+| Sync word | Private network: register value `0x1424` on the SX1262 (the equivalent of `0x12` on older SX127x radios) |
 | TX power | 2 dBm by default. The boards are on the same desk. |
 
 ### 7.2 RF frame format
@@ -378,7 +379,7 @@ This is a deliberate flight-like constraint: the RF link carries health and sele
 
 ### 7.5 Ground modem (IF-05)
 
-The ground modem is a Pico 2 with an RFM95W, connected over USB. It reuses the `hil_link` framing (§8) with these frame types:
+The ground modem is a Pico 2 with a Pico-LoRa-SX1262 board, connected over USB. It reuses the `hil_link` framing (§8) with these frame types:
 
 | Frame | Direction | Content |
 |---|---|---|
@@ -450,7 +451,7 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | DD-04 | Contact windows computed by the ground segment from 42 truth | One mechanism that behaves identically in SIL and HIL. The radio sim's built-in gating only exists in SIL. |
 | DD-05 | The physical reaction wheel mirrors simulated wheel 0 but doesn't feed the dynamics | A desk-mounted flywheel can't torque the simulated spacecraft. The value is measuring real actuator tracking, lag and power against the commanded profile. The speed scale factor between the simulated wheel and the motor is a configuration item. |
 | DD-06 | CAN IDs carry the message type and the source node | Arbitration priority by function; no ID collisions by construction; easy to read on a logic analyser |
-| DD-07 | Real load switches on the EPS node | Lets the test campaign inject real power faults (node power cycle, wheel loss), not only simulated ones |
+| DD-07 | The EPS node controls the ADCS node's reset line and the wheel driver's enable | Lets the test campaign inject real hardware faults (node down, wheel loss), not only simulated ones, with no extra parts and no wiring that could damage a board. Real high-side power switches are a stretch upgrade. |
 | DD-08 | `hil_link` reused for the ground modem | One framing library, already unit-tested, used on two interfaces |
 
 ## 10. Open items
@@ -463,7 +464,8 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | OI-04 | Confirm the current Spanish 868 MHz short-range-device rules (frequency, power, duty cycle) | Iker | Before first RF transmission |
 | OI-05 | ~~Confirm the coarse sun sensor bus~~ Closed: `i2c_2` @ 0x40 | Claude | Closed 2026-10-01 |
 | OI-06 | Stretch: SDLS authentication on the RF link using CryptoLib on the ground side | – | Stretch |
-| OI-07 | Bill of materials update: 3 CAN modules plus one spare; 2 load switch channels | Claude | Phase 4 |
+| OI-07 | ~~Bill of materials update~~ Closed: [hardware/BOM.md](../../hardware/BOM.md) | Claude | Closed 2026-10-01 |
+| OI-08 | Confirm the Pico-CAN-B interrupt pin from its schematic (the firmware polls over SPI until then) | Claude | When the boards arrive |
 
 ## 11. Revision history
 
@@ -472,3 +474,4 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | 1.0 draft | 2026-10-01 | First issue |
 | 1.0 draft b | 2026-10-01 | Added §3.5 and the generated layouts; `HEARTBEAT` reordered so `UPTIME` is 4-byte aligned; closed OI-01 and OI-05 |
 | 1.0 draft c | 2026-10-01 | UDP port allocation (§3.6); time source defined (§8.2); bridge implements §8; closed OI-02 |
+| 1.0 draft d | 2026-10-01 | Hardware selected (BOM): Pico-CAN-B, Pico-LoRa-SX1262; DD-07 reworded; closed OI-07, added OI-08 |
