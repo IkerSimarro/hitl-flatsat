@@ -15,7 +15,9 @@
 #                       host name maps to the container itself
 #   SIL_CONTAINER_NAME  container name
 #   SIL_DETACH=1        run in the background (docker run -d)
+#   SIL_TTY=0           don't allocate a terminal even when run from one
 #   SIL_DOCKER_ARGS     extra docker run arguments
+#   SIL_GRAPHICS=1      open 42's 3D view (also pass DISPLAY and the X11 socket in SIL_DOCKER_ARGS)
 #
 set -u
 
@@ -25,7 +27,7 @@ DBOX=$(sed -n 's/^DBOX="\(.*\)"/\1/p' "$ROOT/nos3/scripts/env.sh")
 DOCKER_FLAGS="--rm"
 if [ "${SIL_DETACH:-0}" = "1" ]; then
     DOCKER_FLAGS="$DOCKER_FLAGS -d"
-elif [ -t 0 ] && [ -t 1 ]; then
+elif [ "${SIL_TTY:-auto}" != "0" ] && [ -t 0 ] && [ -t 1 ]; then
     DOCKER_FLAGS="$DOCKER_FLAGS -it"
 fi
 [ -n "${SIL_CONTAINER_NAME:-}" ] && DOCKER_FLAGS="$DOCKER_FLAGS --name $SIL_CONTAINER_NAME"
@@ -47,4 +49,5 @@ done
 exec docker run $DOCKER_FLAGS ${SIL_DOCKER_ARGS:-} \
     -v "$ROOT:$ROOT" -v "$HOME/.nos3:$HOME/.nos3" -w "$ROOT" \
     -e SIL_LOG_DIR="${SIL_LOG_DIR:-$ROOT/sil/logs/$(date +%Y%m%d-%H%M%S)}" -e SIL_GROUND_HOST="$GROUND_HOST" \
+    -e SIL_GRAPHICS="${SIL_GRAPHICS:-0}" \
     "$DBOX" "$ROOT/sil/sil_env.sh" bash -c "$*"

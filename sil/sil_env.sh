@@ -11,6 +11,7 @@
 # Environment:
 #   SIL_LOG_DIR   where component logs go (default: a new temporary directory)
 #   SIL_NO_BRIDGE set to 1 to skip the bridge
+#   SIL_GRAPHICS  set to 1 to open 42's 3D view (needs DISPLAY and the X11 socket)
 #   SIL_GROUND_HOST  if set, umbilical telemetry and 42 truth go to this host (the ground segment)
 #                    instead of staying inside the container
 #
@@ -64,10 +65,12 @@ log "logs in $SIL_LOG_DIR"
     > "$SIL_LOG_DIR/nos-engine-server.log" 2>&1 &
 sleep 1
 
-# 42 with the mission's InOut files, graphics off
+# 42 with the mission's InOut files; graphics off unless SIL_GRAPHICS=1 (needs DISPLAY)
 rm -rf "$FORTYTWO_DIR/$INOUT_NAME"
 cp -r "$NOS3/cfg/build/InOut" "$FORTYTWO_DIR/$INOUT_NAME"
-sed -i 's/^TRUE\( *!  Graphics Front End\)/FALSE\1/' "$FORTYTWO_DIR/$INOUT_NAME/Inp_Sim.txt"
+if [ "${SIL_GRAPHICS:-0}" != "1" ]; then
+    sed -i 's/^TRUE\( *!  Graphics Front End\)/FALSE\1/' "$FORTYTWO_DIR/$INOUT_NAME/Inp_Sim.txt"
+fi
 (cd "$FORTYTWO_DIR" && exec ./42 "$INOUT_NAME" > "$SIL_LOG_DIR/42.log" 2>&1) &
 
 # Time driver: it draws a curses screen, so give it a pseudo-terminal
