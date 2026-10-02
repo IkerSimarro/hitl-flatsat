@@ -11,6 +11,8 @@
 # Environment:
 #   SIL_LOG_DIR   where component logs go (default: a new temporary directory)
 #   SIL_NO_BRIDGE set to 1 to skip the bridge
+#   SIL_GROUND_HOST  if set, umbilical telemetry and 42 truth go to this host (the ground segment)
+#                    instead of staying inside the container
 #
 set -u
 
@@ -100,10 +102,17 @@ then
 fi
 log "simulation running"
 
+BRIDGE_ARGS=""
+if [ -n "${SIL_GROUND_HOST:-}" ]; then
+    BRIDGE_ARGS="--umb-host $SIL_GROUND_HOST"
+    # 42 truth is sent to this container (readiness check above); pass it on to the ground segment
+    python3 "$ROOT/sil/truth_relay.py" "$SIL_GROUND_HOST" > "$SIL_LOG_DIR/truth-relay.log" 2>&1 &
+fi
+
 if [ "${SIL_NO_BRIDGE:-0}" != "1" ]; then
     # The bridge attaches once the command has created the umbilical pty
     (while [ ! -e "$SIL_UMB_PTY" ]; do sleep 0.2; done
-     exec "$SIM_BIN/nos3-hil-bridge" -d "$SIL_UMB_PTY" -v > "$SIL_LOG_DIR/bridge.log" 2>&1) &
+     exec "$SIM_BIN/nos3-hil-bridge" -d "$SIL_UMB_PTY" $BRIDGE_ARGS -v > "$SIL_LOG_DIR/bridge.log" 2>&1) &
 fi
 
 "$@"

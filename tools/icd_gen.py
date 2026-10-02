@@ -4,8 +4,10 @@
 Outputs (all marked "generated, do not edit"):
     firmware/common/include/flatsat_icd.h       C structs, IDs, lengths, X-macro tables
     ground/flatsat_icd.py                       Python codec for ground software and tests
-    ground/cosmos/FLATSAT/cmd_tlm/FLATSAT_TLM.txt
-    ground/cosmos/FLATSAT/cmd_tlm/FLATSAT_CMD.txt  COSMOS 4 packet definitions
+    nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_TLM.txt
+    nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_CMD.txt
+                                                COSMOS 4 packet definitions (NOS3's COSMOS build copies
+                                                components/*/gsw into its configuration)
     docs/icd/ICD_layouts.md                     Byte-level layout tables
 
 Usage:
@@ -299,7 +301,7 @@ def gen_cosmos_tlm(icd):
 def gen_cosmos_cmd(icd):
     o = [f"# {HEADER_NOTE}",
          "# CCSDS_CHECKSUM must make the XOR of all packet bytes equal 0xFF (ICD 3.2);",
-         "# COSMOS computes it in the FLATSAT interface protocol (ICD open item OI-03).", ""]
+         "# the FlatSat interfaces fill it in with lib/flatsat_checksum_protocol.rb.", ""]
     for c in icd["cmds"]:
         o += [f'COMMAND FLATSAT {c["name"]} LITTLE_ENDIAN "{c["desc"] or c["name"]}"',
               f'  APPEND_ID_PARAMETER CCSDS_STREAMID 16 UINT MIN_UINT16 MAX_UINT16 0x{c["mid"]:04X} '
@@ -492,8 +494,8 @@ def gen_markdown(icd):
 OUTPUTS = {
     "firmware/common/include/flatsat_icd.h": gen_c,
     "ground/flatsat_icd.py": gen_python,
-    "ground/cosmos/FLATSAT/cmd_tlm/FLATSAT_TLM.txt": gen_cosmos_tlm,
-    "ground/cosmos/FLATSAT/cmd_tlm/FLATSAT_CMD.txt": gen_cosmos_cmd,
+    "nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_TLM.txt": gen_cosmos_tlm,
+    "nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_CMD.txt": gen_cosmos_cmd,
     "docs/icd/ICD_layouts.md": gen_markdown,
 }
 

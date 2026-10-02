@@ -193,7 +193,15 @@ Both carry raw space packets over UDP, one packet per datagram.
 | 9030 | Ground station software | RF telecommands from COSMOS `FLATSAT_RF` |
 | 9031 | COSMOS | RF telemetry from the ground station software |
 
-How the two interfaces are added to the NOS3 COSMOS configuration is open item OI-03.
+**COSMOS configuration.** The `FLATSAT` target (packet definitions generated from the ICD, plus `lib/flatsat_checksum_protocol.rb`) lives in the NOS3 fork at `components/hil_bridge/gsw/FLATSAT`, which NOS3's COSMOS build copies in with every other component. `make config` appends the target declaration and the interface from `components/hil_bridge/cosmos/` to the generated COSMOS `system.txt` and `cmd_tlm_server.txt`:
+
+```
+INTERFACE FLATSAT_UMB udp_interface.rb nos-fsw 9010 9011 nil nil 128 nil nil
+  PROTOCOL WRITE flatsat_checksum_protocol.rb
+  TARGET FLATSAT
+```
+
+The checksum protocol fills in the command checksum (§3.2), which COSMOS's cFS targets leave at zero. `FLATSAT_RF` is added with the ground station software in Phase 2. `tests/cosmos/test_cosmos_e2e.sh` runs this configuration headless against the SIL environment.
 
 ## 4. Telemetry catalogue
 
@@ -460,7 +468,7 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 |---|---|---|---|
 | OI-01 | ~~Machine-readable packet definition file~~ Closed: `flatsat_icd.yaml` + `tools/icd_gen.py` (§3.5) | Claude | Closed 2026-10-01 |
 | OI-02 | ~~How the bridge obtains NOS3 simulation time~~ Closed: NOS Engine time bus, §8.2 | Claude | Closed 2026-10-01 |
-| OI-03 | COSMOS interface ports, and how `FLATSAT_UMB`/`FLATSAT_RF` are added (`gsw/cosmos` is a nested NOS3 submodule); COSMOS must also fill in the command checksum (§3.2) | Claude | Phase 2 |
+| OI-03 | ~~COSMOS interface ports and integration~~ Closed for `FLATSAT_UMB` (§3.6); `FLATSAT_RF` follows with the ground station software | Claude | Closed 2026-10-02 |
 | OI-04 | Confirm the current Spanish 868 MHz short-range-device rules (frequency, power, duty cycle) | Iker | Before first RF transmission |
 | OI-05 | ~~Confirm the coarse sun sensor bus~~ Closed: `i2c_2` @ 0x40 | Claude | Closed 2026-10-01 |
 | OI-06 | Stretch: SDLS authentication on the RF link using CryptoLib on the ground side | – | Stretch |
@@ -475,3 +483,4 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | 1.0 draft b | 2026-10-01 | Added §3.5 and the generated layouts; `HEARTBEAT` reordered so `UPTIME` is 4-byte aligned; closed OI-01 and OI-05 |
 | 1.0 draft c | 2026-10-01 | UDP port allocation (§3.6); time source defined (§8.2); bridge implements §8; closed OI-02 |
 | 1.0 draft d | 2026-10-01 | Hardware selected (BOM): Pico-CAN-B, Pico-LoRa-SX1262; DD-07 reworded; closed OI-07, added OI-08 |
+| 1.0 draft e | 2026-10-02 | COSMOS integration of the umbilical (§3.6); enum keys quoted (NCR-002); closed OI-03 |

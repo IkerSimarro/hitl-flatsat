@@ -6,6 +6,9 @@ require 'cosmos/packets/packet_config'
 dir, packets_file = ARGV
 failures = []
 
+require File.join(dir, '..', 'lib', 'flatsat_checksum_protocol.rb')
+checksum = Cosmos::FlatsatChecksumProtocol.new
+
 pc = Cosmos::PacketConfig.new
 pc.process_file(File.join(dir, 'FLATSAT_TLM.txt'), 'FLATSAT')
 pc.process_file(File.join(dir, 'FLATSAT_CMD.txt'), 'FLATSAT')
@@ -31,16 +34,14 @@ File.readlines(packets_file).each do |line|
     c = pc.commands['FLATSAT'][name].clone
     c.restore_defaults
     expected.each { |item, value| c.write(item, value) }
-    ours = c.buffer.unpack1('H*')
-    # Byte 7 is the checksum, which COSMOS doesn't compute yet (ICD OI-03)
-    unless ours[0, 14] == hex[0, 14] && ours[16..-1] == hex[16..-1]
-      failures << "#{name}: COSMOS encoded #{ours}, Python encoded #{hex}"
-    end
+    # What the FLATSAT interfaces send: the packet after the checksum protocol
+    ours = checksum.write_data(c.buffer).unpack1('H*')
+    failures << "#{name}: COSMOS sends #{ours}, Python encoded #{hex}" unless ours == hex
   end
 end
 
 if failures.empty?
-  puts 'COSMOS definitions match the Python codec'
+  puts 'COSMOS definitions and checksum protocol match the Python codec'
 else
   failures.each { |f| puts "FAIL #{f}" }
   exit 1
