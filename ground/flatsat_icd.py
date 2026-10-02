@@ -8,13 +8,13 @@ MODE_REASON = {'BOOT': 0, 'COMMAND': 1, 'FAULT': 2, 'AUTO_RATES_HIGH': 3, 'AUTO_
 RESET_CAUSE = {'POWER_ON': 0, 'WATCHDOG': 1, 'COMMAND': 2, 'UNKNOWN': 3}
 SEVERITY = {'DEBUG': 0, 'INFO': 1, 'WARNING': 2, 'ERROR': 3, 'CRITICAL': 4}
 TIME_SOURCE = {'FREE_RUNNING': 0, 'UMBILICAL': 1}
-ADCS_MODE = {False: 0, 'BDOT': 1, 'SUN_POINT': 2, 'MANUAL': 3}
+ADCS_MODE = {'OFF': 0, 'BDOT': 1, 'SUN_POINT': 2, 'MANUAL': 3}
 CHARGE_STATE = {'IDLE': 0, 'CHARGING': 1, 'FULL': 2}
-RW_CTRL_MODE = {False: 0, 'SPEED': 1, 'DUTY': 2}
+RW_CTRL_MODE = {'OFF': 0, 'SPEED': 1, 'DUTY': 2}
 NODE = {'OBC': 1, 'ADCS': 2, 'EPS': 3}
 NODE_STATE = {'BOOT': 0, 'NOMINAL': 1, 'SAFE': 2, 'FAULT': 3}
 NODE_CMD = {'PING': 1, 'RESET': 2, 'ENTER_SAFE': 3}
-SWITCH_STATE = {False: 0, True: 1}
+SWITCH_STATE = {'OFF': 0, 'ON': 1}
 
 # name: (mid, payload struct format, field names)
 TLM = {

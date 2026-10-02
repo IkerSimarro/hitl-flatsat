@@ -301,6 +301,38 @@ static void test_umbilical(void)
     CHECK(!fs_umb_link_up());
 }
 
+static void test_uart_reopen_on_link_up(void)
+{
+    uint8_t  p[6] = {0};
+    unsigned frames;
+
+    fake_hal_reset();
+    fs_umb_init(NULL);
+
+    /* Port opened before the bridge is listening: the request may be lost */
+    CHECK(fs_umb_uart_open(1) == FS_UMB_OK);
+    CHECK(!fs_umb_link_up());
+    frames = fake_frames_from_fw;
+
+    /* First frame from the bridge: the client must open the port again */
+    fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
+    fs_umb_poll();
+    CHECK(fs_umb_link_up());
+    CHECK(fake_frames_from_fw == frames + 1);
+    CHECK(fake_last_type == HIL_UART_OPEN && fake_last_bus == 1);
+
+    /* Further frames while the link stays up don't repeat it */
+    fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
+    fs_umb_poll();
+    CHECK(fake_frames_from_fw == frames + 1);
+
+    /* After a link loss, the next frame triggers it again */
+    fake_now_us += FS_UMB_LINK_TIMEOUT_US + 1;
+    fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
+    fs_umb_poll();
+    CHECK(fake_frames_from_fw == frames + 2 && fake_last_type == HIL_UART_OPEN);
+}
+
 int main(void)
 {
     fs_hal_init(0, NULL);
@@ -311,6 +343,7 @@ int main(void)
     test_time();
     test_sched();
     test_umbilical();
+    test_uart_reopen_on_link_up();
 
     if (failures)
     {

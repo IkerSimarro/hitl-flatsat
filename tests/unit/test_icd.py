@@ -122,6 +122,12 @@ class TestGenerator(unittest.TestCase):
         with self.assertRaises(icd_gen.IcdError):
             icd_gen.layout([{"name": "SWITCH", "type": "u8"}], "test")
 
+    def test_enum_names_are_identifiers(self):
+        # Guards against YAML 1.1 reading OFF/ON as booleans
+        for ename in ("ADCS_MODE", "SWITCH_STATE", "RW_CTRL_MODE"):
+            self.assertIn("OFF", getattr(icd, ename), ename)
+        self.assertIn("ON", icd.SWITCH_STATE)
+
     def test_generated_files_up_to_date(self):
         data = icd_gen.load()
         for rel, gen in icd_gen.OUTPUTS.items():

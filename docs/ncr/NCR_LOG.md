@@ -5,6 +5,8 @@ A non-conformance report (NCR) records every case where the system, its test env
 | ID | Date | Title | Severity | Status |
 |---|---|---|---|---|
 | [NCR-001](#ncr-001) | 2026-10-02 | 42 overwrites external actuator commands every 0.2 s | Major | Closed |
+| [NCR-002](#ncr-002) | 2026-10-02 | Enum values OFF/ON generated as False/True | Major | Closed |
+| [NCR-003](#ncr-003) | 2026-10-02 | GPS port open request lost before the bridge attaches | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -30,3 +32,41 @@ Severity: **Critical** invalidates results or risks hardware; **Major** a functi
 **Verification.** Same test after the fix: 0.5 mNm for 2 s gives +0.001005 Nms (expected +0.001000, error 0.5 %, consistent with command latency). All 14 device checks pass.
 
 **Follow-up.** The torquer path has the same root cause; its physical effect will be verified by the Phase 2 detumble test.
+
+---
+
+## NCR-002
+
+**Enum values OFF/ON generated as False/True**
+
+| | |
+|---|---|
+| Found by | Compiler error building the OBC (`FLATSAT_ADCS_MODE_OFF` undeclared) |
+| Item | Interface definitions `docs/icd/flatsat_icd.yaml`, generator `tools/icd_gen.py` |
+| Severity | Major: COSMOS would have shown the ADCS mode, wheel control mode and switch states as "False"/"True", and C code couldn't name those values |
+| Status | Closed 2026-10-02 |
+
+**Root cause.** YAML 1.1, which PyYAML implements, reads unquoted `OFF`, `ON`, `YES` and `NO` as booleans (the "Norway problem"). The enums `adcs_mode`, `rw_ctrl_mode` and `switch_state` therefore had value names `False`/`True` in every generated file. The unit tests didn't catch it because they test round trips by value, not by name.
+
+**Fix.** Keys quoted in the YAML. The generator now rejects any enum value name that isn't an `UPPER_CASE` identifier, with a message explaining the cause, and a unit test asserts the `OFF`/`ON` names exist.
+
+**Verification.** The generator rejects a copy of the file with `OFF` unquoted; the regenerated files contain no `False`/`True`; all unit tests and the COSMOS cross-check pass.
+
+---
+
+## NCR-003
+
+**GPS port open request lost before the bridge attaches**
+
+| | |
+|---|---|
+| Found by | OBC system test (`tests/system/test_obc_umbilical.py`): sensor valid mask 0x1F, GPS bit never set |
+| Item | Umbilical client `firmware/common/src/fs_umbilical.c` |
+| Severity | Minor: GPS data never reached the OBC when it booted before the bridge |
+| Status | Closed 2026-10-02 |
+
+**Root cause.** The OBC opens the GPS port (`UART_OPEN`) at boot. If the bridge hasn't attached yet, the request waits in the serial line, and the bridge flushes the line when it opens it, so the request is lost. A bridge restart would lose every open port the same way.
+
+**Fix.** The umbilical client re-sends `UART_OPEN` for every open port whenever the link comes up (first frame received, or first frame after a link loss).
+
+**Verification.** New unit test `test_uart_reopen_on_link_up`; the system test shows all six sensors valid (mask 0x3F).

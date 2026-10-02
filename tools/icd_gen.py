@@ -14,6 +14,7 @@ Usage:
 """
 import argparse
 import pathlib
+import re
 import sys
 
 import yaml
@@ -82,6 +83,13 @@ def layout(fields, where):
 def load(path=SOURCE):
     data = yaml.safe_load(path.read_text())
     enums = data["enums"]
+
+    # YAML 1.1 turns unquoted OFF/ON/YES/NO into booleans ("Norway problem"); names must be identifiers
+    for ename, e in enums.items():
+        for key in e["values"]:
+            if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
+                raise IcdError(f"enum {ename}: value name {key!r} must be an UPPER_CASE identifier "
+                               f"(quote OFF/ON/YES/NO in the YAML)")
 
     def check_enums(fields, where):
         for f in fields:

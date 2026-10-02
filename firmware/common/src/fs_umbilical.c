@@ -210,6 +210,23 @@ static void dispatch(const hil_frame_t *f)
     in_handler = 0;
 }
 
+/*
+** The bridge flushes the serial line when it opens it and forgets its ports when it restarts, so every
+** UART_OPEN sent before the link came up may be lost: send them again whenever the link (re)starts
+*/
+static void reopen_uarts(void)
+{
+    unsigned i;
+
+    for (i = 0; i < UART_SLOTS; i++)
+    {
+        if (uart_rings[i].bus != NO_BUS)
+        {
+            send_frame(HIL_UART_OPEN, uart_rings[i].bus, next_seq++, 0, NULL, 0);
+        }
+    }
+}
+
 void fs_umb_poll(void)
 {
     uint8_t buf[256];
@@ -223,8 +240,14 @@ void fs_umb_poll(void)
             hil_decode_result_t r = hil_decoder_feed(&decoder, buf[i], &rx_frame);
             if (r == HIL_DECODE_FRAME)
             {
+                int was_up = fs_umb_link_up();
+
                 stats.rx_frames++;
                 last_rx_us = fs_hal_time_us();
+                if (!was_up)
+                {
+                    reopen_uarts();
+                }
                 dispatch(&rx_frame);
             }
             else if (r == HIL_DECODE_ERROR)

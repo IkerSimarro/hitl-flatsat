@@ -11,13 +11,13 @@ ICD data version 1.0. Offsets are from the start of the packet (telemetry and co
 - **reset_cause**: `POWER_ON` = 0, `WATCHDOG` = 1, `COMMAND` = 2, `UNKNOWN` = 3
 - **severity**: `DEBUG` = 0, `INFO` = 1, `WARNING` = 2, `ERROR` = 3, `CRITICAL` = 4
 - **time_source**: `FREE_RUNNING` = 0, `UMBILICAL` = 1
-- **adcs_mode**: `False` = 0, `BDOT` = 1, `SUN_POINT` = 2, `MANUAL` = 3
+- **adcs_mode**: `OFF` = 0, `BDOT` = 1, `SUN_POINT` = 2, `MANUAL` = 3
 - **charge_state**: `IDLE` = 0, `CHARGING` = 1, `FULL` = 2
-- **rw_ctrl_mode**: `False` = 0, `SPEED` = 1, `DUTY` = 2
+- **rw_ctrl_mode**: `OFF` = 0, `SPEED` = 1, `DUTY` = 2
 - **node**: `OBC` = 1, `ADCS` = 2, `EPS` = 3
 - **node_state**: `BOOT` = 0, `NOMINAL` = 1, `SAFE` = 2, `FAULT` = 3
 - **node_cmd**: `PING` = 1, `RESET` = 2, `ENTER_SAFE` = 3
-- **switch_state**: `False` = 0, `True` = 1
+- **switch_state**: `OFF` = 0, `ON` = 1
 
 ## Telemetry packets
 

@@ -63,7 +63,7 @@ typedef enum
 
 typedef enum
 {
-    FLATSAT_ADCS_MODE_False = 0,
+    FLATSAT_ADCS_MODE_OFF = 0,
     FLATSAT_ADCS_MODE_BDOT = 1,
     FLATSAT_ADCS_MODE_SUN_POINT = 2,
     FLATSAT_ADCS_MODE_MANUAL = 3,
@@ -78,7 +78,7 @@ typedef enum
 
 typedef enum
 {
-    FLATSAT_RW_CTRL_MODE_False = 0,
+    FLATSAT_RW_CTRL_MODE_OFF = 0,
     FLATSAT_RW_CTRL_MODE_SPEED = 1,
     FLATSAT_RW_CTRL_MODE_DUTY = 2,
 } flatsat_rw_ctrl_mode_t;
@@ -107,8 +107,8 @@ typedef enum
 
 typedef enum
 {
-    FLATSAT_SWITCH_STATE_False = 0,
-    FLATSAT_SWITCH_STATE_True = 1,
+    FLATSAT_SWITCH_STATE_OFF = 0,
+    FLATSAT_SWITCH_STATE_ON = 1,
 } flatsat_switch_state_t;
 
 /* ---- Telemetry packets: payload follows the 16-byte header ---- */

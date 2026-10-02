@@ -47,6 +47,18 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     target_link_libraries(test_common fs_common)
     add_test(NAME test_common COMMAND test_common)
 
+    # OBC flight software, software-in-the-loop build
+    add_executable(obc
+        obc/obc_main.c
+        obc/obc_cmd.c
+        obc/obc_events.c
+        obc/obc_mode.c
+        obc/obc_sensors.c
+        obc/obc_tlm.c
+    )
+    target_include_directories(obc PRIVATE obc)
+    target_link_libraries(obc obc_devices fs_common fs_hal m)
+
     # Needs the SIL environment (sil/sil.sh), so it isn't registered with ctest
     add_executable(test_devices tests/sil/test_devices.c)
     target_link_libraries(test_devices obc_devices fs_common fs_hal m)

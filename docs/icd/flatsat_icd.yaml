@@ -25,11 +25,11 @@ enums:
   time_source:
     values: {FREE_RUNNING: 0, UMBILICAL: 1}
   adcs_mode:
-    values: {OFF: 0, BDOT: 1, SUN_POINT: 2, MANUAL: 3}
+    values: {'OFF': 0, BDOT: 1, SUN_POINT: 2, MANUAL: 3}
   charge_state:
     values: {IDLE: 0, CHARGING: 1, FULL: 2}
   rw_ctrl_mode:
-    values: {OFF: 0, SPEED: 1, DUTY: 2}
+    values: {'OFF': 0, SPEED: 1, DUTY: 2}
   node:
     values: {OBC: 1, ADCS: 2, EPS: 3}
   node_state:
@@ -37,7 +37,7 @@ enums:
   node_cmd:
     values: {PING: 1, RESET: 2, ENTER_SAFE: 3}
   switch_state:
-    values: {OFF: 0, ON: 1}
+    values: {'OFF': 0, 'ON': 1}
 
 # CCSDS telemetry packets (ICD 3.1 header + payload below)
 telemetry:
