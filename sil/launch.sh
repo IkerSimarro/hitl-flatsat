@@ -53,7 +53,8 @@ if [ $HEADLESS = 0 ]; then
 else
     COSMOS_CMD="ruby tools/CmdTlmServer --no-gui"
 fi
-docker run -d --rm --name "$COSMOS_NAME" --network "$NET" --network-alias flatsat-cosmos $X11_ARGS \
+# --init: COSMOS's GUI tools call setpgrp(), which fails (EPERM) for PID 1, a session leader (NCR-007)
+docker run -d --rm --init --name "$COSMOS_NAME" --network "$NET" --network-alias flatsat-cosmos $X11_ARGS \
     -v "$ROOT:$ROOT" -w "$COSMOS_DIR" -e PROCESSOR_ENDIANNESS=LITTLE_ENDIAN \
     ballaerospace/cosmos:4.5.0 $COSMOS_CMD > /dev/null || fail "could not start COSMOS"
 echo "[launch] COSMOS started$([ $HEADLESS = 0 ] && echo ": open 'Command and Telemetry Server', then Packet Viewer > FLATSAT")"

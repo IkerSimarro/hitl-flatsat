@@ -10,6 +10,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-004](#ncr-004) | 2026-10-02 | Star tracker and wheel reads time out right after start-up | Minor | Closed |
 | [NCR-005](#ncr-005) | 2026-10-02 | Isolated late replies raise sensor fault events | Minor | Closed |
 | [NCR-006](#ncr-006) | 2026-10-02 | One stalled simulator blocks the bridge for every device | Major | Open |
+| [NCR-007](#ncr-007) | 2026-10-02 | COSMOS Launcher crashes after the legal agreement | Major | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -147,3 +148,24 @@ Severity: **Critical** invalidates results or risks hardware; **Major** a functi
 **Planned fix.** One worker thread per bus in the bridge, with a deadline per transaction. A stalled bus answers `BUS_ERROR` while the other buses carry on. This matters for the hardware phase too, because the real OBC will read the simulated sensors through the same bridge.
 
 **Workaround.** None needed for normal operation. The persistence filter (NCR-005) already prevents false alarms for short stalls.
+
+---
+
+## NCR-007
+
+**COSMOS Launcher crashes after the legal agreement**
+
+| | |
+|---|---|
+| Found by | Operator: after clicking Ok in the Legal Agreement window, the NOS3 Launcher never appeared |
+| Item | Launcher `sil/launch.sh` |
+| Severity | Major: the ground station GUI was unusable from the one-command launch |
+| Status | Closed 2026-10-02 |
+
+**Root cause.** COSMOS's crash report (`nos3/gsw/cosmos/outputs/logs/*_exception.txt`) showed `EPERM: Operation not permitted` in `Process.setpgrp`, called when the Launcher's main window starts (`cosmos/gui/qt_tool.rb:52`). Linux refuses `setpgrp()` for a session leader. `sil/launch.sh` ran `ruby Launcher` directly as the container's command, making it PID 1 and a session leader. The legal agreement dialog comes before that call, so it appeared normally. The earlier GUI checks only confirmed that window, so they missed this. The headless server (`CmdTlmServer --no-gui`) doesn't call `setpgrp`, so the automated tests passed.
+
+**Fix.** The COSMOS container starts with Docker's `--init`: a minimal init process is PID 1, and COSMOS runs as an ordinary child process.
+
+**Verification.**
+- `Process.setpgrp` in the COSMOS image fails with EPERM without `--init` and succeeds with it.
+- The operator then accepted the agreement and used the NOS3 Launcher, Command Sender (`FLATSAT OBC_NOOP`) and Packet Viewer (`FLATSAT OBC_HK`) against the running simulation.
