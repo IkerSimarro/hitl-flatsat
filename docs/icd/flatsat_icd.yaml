@@ -64,7 +64,7 @@ telemetry:
       - {name: CAN_TEC, type: u8, desc: "MCP2515 transmit error counter"}
       - {name: CAN_REC, type: u8, desc: "MCP2515 receive error counter"}
       - {name: EVENT_COUNT, type: u16}
-      - {name: SPARE, type: u16}
+      - {name: SENSOR_MISSES, type: u16, desc: "Failed device reads since boot, including isolated misses below the fault persistence threshold"}
 
   - name: BEACON
     mid: 0x0A01

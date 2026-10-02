@@ -71,7 +71,10 @@ cp -r "$NOS3/cfg/build/InOut" "$FORTYTWO_DIR/$INOUT_NAME"
 if [ "${SIL_GRAPHICS:-0}" != "1" ]; then
     sed -i 's/^TRUE\( *!  Graphics Front End\)/FALSE\1/' "$FORTYTWO_DIR/$INOUT_NAME/Inp_Sim.txt"
 fi
-(cd "$FORTYTWO_DIR" && exec ./42 "$INOUT_NAME" > "$SIL_LOG_DIR/42.log" 2>&1) &
+# Without a GPU, Mesa's llvmpipe renders 42's windows with one thread per CPU, once per simulated
+# second; on a laptop those bursts delayed the bridge past its 100 ms deadline. Two render threads and a
+# lower priority keep the bridge, simulators and OBC responsive (42 tolerates a few ms of delay).
+(cd "$FORTYTWO_DIR" && LP_NUM_THREADS=2 exec nice -n 10 ./42 "$INOUT_NAME" > "$SIL_LOG_DIR/42.log" 2>&1) &
 
 # Time driver: it draws a curses screen, so give it a pseudo-terminal
 (cd "$SIL_LOG_DIR" && sleep infinity | TERM=xterm script -qfec "$SIM_BIN/nos3-single-simulator -f $SIM_CFG time" \

@@ -45,6 +45,7 @@ typedef struct
 
     /* Latest sensor data (valid bits say which are current) */
     uint16_t  sensor_valid;
+    uint16_t  sensor_misses; /* failed device reads, including ones too brief to declare a fault */
     dev_imu_t imu;
     dev_mag_t mag;
     dev_fss_t fss;

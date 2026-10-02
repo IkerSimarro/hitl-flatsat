@@ -8,6 +8,8 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-002](#ncr-002) | 2026-10-02 | Enum values OFF/ON generated as False/True | Major | Closed |
 | [NCR-003](#ncr-003) | 2026-10-02 | GPS port open request lost before the bridge attaches | Minor | Closed |
 | [NCR-004](#ncr-004) | 2026-10-02 | Star tracker and wheel reads time out right after start-up | Minor | Closed |
+| [NCR-005](#ncr-005) | 2026-10-02 | Isolated late replies raise sensor fault events | Minor | Closed |
+| [NCR-006](#ncr-006) | 2026-10-02 | One stalled simulator blocks the bridge for every device | Major | Open |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -95,3 +97,53 @@ Severity: **Critical** invalidates results or risks hardware; **Major** a functi
 - Unit test `test_uart_reopen_on_link_up` extended to all bus types and the link-up timer.
 - Three headless launches: all ten buses opened immediately after link-up, the first sensor transaction about 550 log lines later, zero sensor fault events.
 - Full regression passes: devices 14/14, OBC system test 12/12, COSMOS end to end 7/7, bridge end to end.
+
+---
+
+## NCR-005
+
+**Isolated late replies raise sensor fault events**
+
+| | |
+|---|---|
+| Found by | Operator, interactive launches with graphics: 18 fault/recovery event pairs in about 65 s, mostly the IMU, sometimes every device at once |
+| Item | OBC sensor acquisition `firmware/obc/obc_sensors.c` |
+| Severity | Minor: the data handling was correct (failed reads were marked invalid), but the event stream was flooded with false alarms |
+| Status | Closed 2026-10-02 |
+
+**Root cause.** Two parts:
+- **Load.** The software-in-the-loop environment keeps about five of the laptop's eight CPU threads busy by design (measured: 42 at 100 % even without graphics, the NOS Engine server at about 70 %, the simulators). With 42's software-rendered graphics (about 165 %) and normal desktop use on top, requests occasionally reach a simulator late. One IMU request arrived 1.215 s after the previous one instead of 1 s, so its reply missed the OBC's 100 ms deadline.
+- **Fault logic.** The OBC declared a device failed on its first missed read, so every such hiccup became a fault event and, a second later, a recovery event.
+
+**Fix.**
+- A reusable persistence filter (`firmware/common/src/fs_persist.c`), standard FDIR practice: a device is declared failed only after 3 consecutive missed reads (3 s at the 1 Hz acquisition rate), and recovered on the first good read after that. Each failed read still marks that device's data invalid immediately.
+- Fault state is kept across umbilical outages, so faults declared before an outage still get their recovery event.
+- New telemetry `OBC_HK.SENSOR_MISSES` (in place of a spare field) counts every failed read, so transient misses stay measurable for the test report instead of disappearing.
+- Environment: 42 now runs at lower priority with two render threads (`sil/sil_env.sh`), so its graphics bursts don't take every core. This is harmless, but the measurement couldn't show an effect: two interactive runs, before and after the change, both had zero faults.
+
+**Verification.**
+- Unit test `test_persistence`: isolated misses never trip; three in a row trip exactly once; the first good read clears.
+- Fault injection `tests/system/test_fault_persistence.sh`, which freezes the IMU simulator (3/3 pass):
+  - normal operation: 0 misses;
+  - 1.5 s freeze: 13 misses counted, no fault events;
+  - 6 s freeze: one fault event and one recovery event per device.
+- Full regression passes: unit, COSMOS cross-check, devices 14/14, OBC system test 12/12, COSMOS end to end 7/7.
+
+---
+
+## NCR-006
+
+**One stalled simulator blocks the bridge for every device**
+
+| | |
+|---|---|
+| Found by | Fault injection `tests/system/test_fault_persistence.sh`: freezing only the IMU simulator made every device miss, and a 6 s freeze dropped the umbilical link |
+| Item | HIL bridge `nos3/components/hil_bridge/sim/src/hil_bridge.c` |
+| Severity | Major: one unresponsive device takes every other device down with it, so the OBC can't isolate the faulty one; the same coupling makes load spikes affect all devices at once |
+| Status | Open, planned for Phase 2 |
+
+**Root cause.** The bridge is single-threaded, and NOS Engine bus calls block until the simulator answers. Every synchronous-operation timeout in the NOS Engine C API defaults to infinite (measured). Setting `NE_set_default_timeout()` for send and receive to 80 ms had no effect on CAN transactions, and that change was reverted.
+
+**Planned fix.** One worker thread per bus in the bridge, with a deadline per transaction. A stalled bus answers `BUS_ERROR` while the other buses carry on. This matters for the hardware phase too, because the real OBC will read the simulated sensors through the same bridge.
+
+**Workaround.** None needed for normal operation. The persistence filter (NCR-005) already prevents false alarms for short stalls.

@@ -17,6 +17,7 @@ add_library(fs_common STATIC
     common/src/fs_time.c
     common/src/fs_sched.c
     common/src/fs_umbilical.c
+    common/src/fs_persist.c
     ${HIL_PROTOCOL_DIR}/hil_link.c
 )
 target_include_directories(fs_common PUBLIC common/include ${HIL_PROTOCOL_DIR})

@@ -51,7 +51,8 @@ static void build_obc_hk(void *p)
     t->time_source      = fs_time_source();
     t->link_flags       = fs_umb_link_up() ? 0x01 : 0x00;
     fs_hal_can_error_counters(&t->can_tec, &t->can_rec);
-    t->event_count = obc.event_count;
+    t->event_count   = obc.event_count;
+    t->sensor_misses = obc.sensor_misses;
 }
 
 static void build_beacon(void *p)

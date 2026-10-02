@@ -3,6 +3,7 @@
 ** transitions between working and failed as events (so a fault produces one event, not one per cycle)
 */
 #include "fs_hal.h"
+#include "fs_persist.h"
 #include "fs_umbilical.h"
 #include "obc.h"
 
@@ -14,41 +15,59 @@ static const char *const device_names[] = {"IMU", "magnetometer", "fine sun sens
 #define GPS_STALE_US   3000000u /* GPS logs once a second */
 /* After the link comes up the bridge opens ten buses at ~50 ms each (NCR-004); wait well past that */
 #define LINK_SETTLE_US 2000000u
+/* Consecutive failed reads before a device is declared failed (NCR-005): a single late reply on a
+** loaded machine marks that reading invalid but isn't a fault */
+#define FAULT_PERSISTENCE 3
 
-static uint16_t reported_faults; /* devices currently reported as failed */
-static uint64_t gps_last_fix_us;
+static fs_persist_t persist[NUM_TRACKED];
+static uint64_t     gps_last_fix_us;
+
+static void reset_persistence(void)
+{
+    unsigned i;
+
+    for (i = 0; i < NUM_TRACKED; i++)
+    {
+        fs_persist_init(&persist[i], FAULT_PERSISTENCE);
+    }
+}
 
 static void update(uint16_t bit, int rc)
 {
-    unsigned idx = 0;
+    unsigned           idx = 0;
+    fs_persist_event_t ev;
 
     while ((1u << idx) != bit)
     {
         idx++;
     }
+
+    /* The data from a failed read is never used, whatever the fault state */
     if (rc == DEV_OK)
     {
         obc.sensor_valid |= bit;
-        if (reported_faults & bit)
-        {
-            reported_faults &= (uint16_t)~bit;
-            obc_event(EVT_SENSOR_RECOVERED, FLATSAT_SEVERITY_INFO, "%s recovered", device_names[idx]);
-        }
     }
     else
     {
         obc.sensor_valid &= (uint16_t)~bit;
-        if (!(reported_faults & bit))
-        {
-            reported_faults |= bit;
-            obc_event(EVT_SENSOR_FAULT, FLATSAT_SEVERITY_ERROR, "%s read failed (%d)", device_names[idx], rc);
-        }
+        obc.sensor_misses++;
+    }
+
+    ev = fs_persist_update(&persist[idx], rc == DEV_OK);
+    if (ev == FS_PERSIST_TRIPPED)
+    {
+        obc_event(EVT_SENSOR_FAULT, FLATSAT_SEVERITY_ERROR, "%s failed: %u consecutive reads (last error %d)",
+                  device_names[idx], FAULT_PERSISTENCE, rc);
+    }
+    else if (ev == FS_PERSIST_CLEARED)
+    {
+        obc_event(EVT_SENSOR_RECOVERED, FLATSAT_SEVERITY_INFO, "%s recovered", device_names[idx]);
     }
 }
 
 void obc_sensors_init(void)
 {
-    reported_faults  = 0;
+    reset_persistence();
     obc.sensor_valid = 0;
     gps_last_fix_us  = 0;
     dev_open_all();
@@ -61,11 +80,11 @@ void obc_sensors_acquire(void)
     int i;
     int dark = 1;
 
-    /* Without the umbilical no simulated device is reachable; the link event reports it once */
+    /* Without the umbilical no simulated device is reachable; the link event reports it once. Fault
+     * states are kept, so faults declared before the outage still get their recovery event after it. */
     if (!fs_umb_link_up())
     {
         obc.sensor_valid = 0;
-        reported_faults  = 0;
         return;
     }
     if (fs_umb_link_up_for_us() < LINK_SETTLE_US)

@@ -8,6 +8,7 @@
 #include "flatsat_icd.h"
 #include "fs_ccsds.h"
 #include "fs_hal.h"
+#include "fs_persist.h"
 #include "fs_sched.h"
 #include "fs_time.h"
 #include "fs_umbilical.h"
@@ -342,6 +343,42 @@ static void test_uart_reopen_on_link_up(void)
     CHECK(fs_umb_link_up_for_us() < 1000);
 }
 
+static void test_persistence(void)
+{
+    fs_persist_t p;
+    int          i;
+
+    fs_persist_init(&p, 3);
+
+    /* Two isolated misses: counted, never a fault */
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 1) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 1) == FS_PERSIST_NO_CHANGE);
+    CHECK(!p.faulted && p.misses == 3);
+
+    /* Three in a row: declared exactly once, however long it lasts */
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_TRIPPED);
+    for (i = 0; i < 300; i++)
+    {
+        CHECK(fs_persist_update(&p, 0) == FS_PERSIST_NO_CHANGE);
+    }
+    CHECK(p.faulted && p.misses == 306);
+
+    /* First good check clears it, once */
+    CHECK(fs_persist_update(&p, 1) == FS_PERSIST_CLEARED);
+    CHECK(fs_persist_update(&p, 1) == FS_PERSIST_NO_CHANGE);
+    CHECK(!p.faulted);
+
+    /* Threshold 1 behaves like no filter; 0 is treated as 1 */
+    fs_persist_init(&p, 0);
+    CHECK(fs_persist_update(&p, 0) == FS_PERSIST_TRIPPED);
+    CHECK(fs_persist_update(&p, 1) == FS_PERSIST_CLEARED);
+}
+
 int main(void)
 {
     fs_hal_init(0, NULL);
@@ -353,6 +390,7 @@ int main(void)
     test_sched();
     test_umbilical();
     test_uart_reopen_on_link_up();
+    test_persistence();
 
     if (failures)
     {

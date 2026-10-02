@@ -46,7 +46,7 @@ OBC housekeeping
 | 46 | 1 | `CAN_TEC` | u8 |  | MCP2515 transmit error counter |
 | 47 | 1 | `CAN_REC` | u8 |  | MCP2515 receive error counter |
 | 48 | 2 | `EVENT_COUNT` | u16 |  |  |
-| 50 | 2 | `SPARE` | u16 |  |  |
+| 50 | 2 | `SENSOR_MISSES` | u16 |  | Failed device reads since boot, including isolated misses below the fault persistence threshold |
 
 ### `BEACON` — MID `0x0A01`, 36 bytes
 

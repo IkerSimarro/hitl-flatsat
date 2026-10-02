@@ -137,7 +137,7 @@ typedef struct __attribute__((packed))
     uint8_t can_tec; /* MCP2515 transmit error counter */
     uint8_t can_rec; /* MCP2515 receive error counter */
     uint16_t event_count;
-    uint16_t spare;
+    uint16_t sensor_misses; /* Failed device reads since boot, including isolated misses below the fault persistence threshold */
 } flatsat_obc_hk_t;
 _Static_assert(sizeof(flatsat_obc_hk_t) == 36, "OBC_HK layout");
 
