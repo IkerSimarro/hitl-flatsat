@@ -309,28 +309,37 @@ static void test_uart_reopen_on_link_up(void)
     fake_hal_reset();
     fs_umb_init(NULL);
 
-    /* Port opened before the bridge is listening: the request may be lost */
+    /* Buses declared before the bridge is listening: the requests may be lost */
     CHECK(fs_umb_uart_open(1) == FS_UMB_OK);
+    CHECK(fs_umb_i2c_open(2) == FS_UMB_OK);
+    CHECK(fs_umb_spi_open(0, 2) == FS_UMB_OK);
+    CHECK(fs_umb_can_open(0) == FS_UMB_OK);
+    CHECK(fs_umb_can_open(0) == FS_UMB_OK); /* declaring twice sends nothing more */
     CHECK(!fs_umb_link_up());
+    CHECK(fs_umb_link_up_for_us() == 0);
     frames = fake_frames_from_fw;
 
-    /* First frame from the bridge: the client must open the port again */
+    /* First frame from the bridge: the client must open all four again; the last one sent is CAN */
     fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
     fs_umb_poll();
     CHECK(fs_umb_link_up());
-    CHECK(fake_frames_from_fw == frames + 1);
-    CHECK(fake_last_type == HIL_UART_OPEN && fake_last_bus == 1);
+    CHECK(fake_frames_from_fw == frames + 4);
+    CHECK(fake_last_type == HIL_CAN_OPEN && fake_last_bus == 0);
 
-    /* Further frames while the link stays up don't repeat it */
+    /* Further frames while the link stays up don't repeat it; the up time grows */
+    fake_now_us += 500000;
     fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
     fs_umb_poll();
-    CHECK(fake_frames_from_fw == frames + 1);
+    CHECK(fake_frames_from_fw == frames + 4);
+    CHECK(fs_umb_link_up_for_us() >= 500000 && fs_umb_link_up_for_us() < 600000);
 
-    /* After a link loss, the next frame triggers it again */
+    /* After a link loss, the next frame triggers it again and the up time restarts */
     fake_now_us += FS_UMB_LINK_TIMEOUT_US + 1;
+    CHECK(fs_umb_link_up_for_us() == 0);
     fake_bridge_inject(HIL_TIME, 0, p, sizeof(p));
     fs_umb_poll();
-    CHECK(fake_frames_from_fw == frames + 2 && fake_last_type == HIL_UART_OPEN);
+    CHECK(fake_frames_from_fw == frames + 8 && fake_last_type == HIL_CAN_OPEN);
+    CHECK(fs_umb_link_up_for_us() < 1000);
 }
 
 int main(void)

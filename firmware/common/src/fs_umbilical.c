@@ -23,6 +23,18 @@ typedef struct
     uint8_t  data[UART_RING_SIZE];
 } uart_ring_t;
 
+/* I2C/SPI/CAN buses the OBC has declared, re-opened whenever the link (re)starts */
+#define BUS_SLOTS 12
+
+typedef struct
+{
+    uint8_t  open_type; /* HIL_I2C_OPEN, HIL_SPI_OPEN or HIL_CAN_OPEN; 0 = free */
+    uint8_t  bus;
+    uint32_t addr;
+} bus_slot_t;
+
+static bus_slot_t bus_slots[BUS_SLOTS];
+
 static fs_umb_handlers_t handlers;
 static fs_umb_stats_t    stats;
 static hil_decoder_t     decoder;
@@ -34,6 +46,7 @@ static uart_ring_t       uart_rings[UART_SLOTS];
 
 static uint8_t  next_seq;
 static uint64_t last_rx_us;
+static uint64_t link_up_since_us; /* when the current link-up period began */
 static int      in_handler;
 
 /* Response the current transaction is waiting for */
@@ -66,9 +79,59 @@ void fs_umb_init(const fs_umb_handlers_t *h)
         uart_rings[i].head = 0;
         uart_rings[i].tail = 0;
     }
-    next_seq   = 0;
-    last_rx_us = 0;
+    memset(bus_slots, 0, sizeof(bus_slots));
+    next_seq         = 0;
+    last_rx_us       = 0;
+    link_up_since_us = 0;
     in_handler = 0;
+}
+
+uint64_t fs_umb_link_up_for_us(void)
+{
+    return fs_umb_link_up() ? fs_hal_time_us() - link_up_since_us : 0;
+}
+
+static int send_frame(uint8_t type, uint8_t bus, uint8_t seq, uint32_t addr, const void *payload, size_t len);
+
+static int declare_bus(uint8_t open_type, uint8_t bus, uint32_t addr)
+{
+    unsigned i;
+    int      free_slot = -1;
+
+    for (i = 0; i < BUS_SLOTS; i++)
+    {
+        if (bus_slots[i].open_type == open_type && bus_slots[i].bus == bus && bus_slots[i].addr == addr)
+        {
+            return FS_UMB_OK;
+        }
+        if (bus_slots[i].open_type == 0 && free_slot < 0)
+        {
+            free_slot = (int)i;
+        }
+    }
+    if (free_slot < 0)
+    {
+        return FS_UMB_TOO_LONG;
+    }
+    bus_slots[free_slot].open_type = open_type;
+    bus_slots[free_slot].bus       = bus;
+    bus_slots[free_slot].addr      = addr;
+    return send_frame(open_type, bus, next_seq++, addr, NULL, 0);
+}
+
+int fs_umb_i2c_open(uint8_t bus)
+{
+    return declare_bus(HIL_I2C_OPEN, bus, 0);
+}
+
+int fs_umb_spi_open(uint8_t bus, uint8_t cs)
+{
+    return declare_bus(HIL_SPI_OPEN, bus, cs);
+}
+
+int fs_umb_can_open(uint8_t bus)
+{
+    return declare_bus(HIL_CAN_OPEN, bus, 0);
 }
 
 int fs_umb_link_up(void)
@@ -211,10 +274,10 @@ static void dispatch(const hil_frame_t *f)
 }
 
 /*
-** The bridge flushes the serial line when it opens it and forgets its ports when it restarts, so every
-** UART_OPEN sent before the link came up may be lost: send them again whenever the link (re)starts
+** The bridge flushes the serial line when it opens it and forgets its buses when it restarts, so every
+** open request sent before the link came up may be lost: send them all again whenever the link (re)starts
 */
-static void reopen_uarts(void)
+static void reopen_all(void)
 {
     unsigned i;
 
@@ -223,6 +286,13 @@ static void reopen_uarts(void)
         if (uart_rings[i].bus != NO_BUS)
         {
             send_frame(HIL_UART_OPEN, uart_rings[i].bus, next_seq++, 0, NULL, 0);
+        }
+    }
+    for (i = 0; i < BUS_SLOTS; i++)
+    {
+        if (bus_slots[i].open_type != 0)
+        {
+            send_frame(bus_slots[i].open_type, bus_slots[i].bus, next_seq++, bus_slots[i].addr, NULL, 0);
         }
     }
 }
@@ -246,7 +316,8 @@ void fs_umb_poll(void)
                 last_rx_us = fs_hal_time_us();
                 if (!was_up)
                 {
-                    reopen_uarts();
+                    link_up_since_us = last_rx_us;
+                    reopen_all();
                 }
                 dispatch(&rx_frame);
             }

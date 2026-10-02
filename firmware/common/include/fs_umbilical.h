@@ -54,9 +54,20 @@ void fs_umb_init(const fs_umb_handlers_t *handlers);
 void fs_umb_poll(void);
 
 int fs_umb_link_up(void);
+/* How long the link has been up without interruption, 0 if it is down */
+uint64_t fs_umb_link_up_for_us(void);
 const fs_umb_stats_t *fs_umb_stats(void);
 
 /* ---- NOS3 device sims ---- */
+
+/*
+** Declare the buses the OBC uses. The bridge opens a NOS Engine bus on first use, which takes about
+** 50 ms and would count against that transaction's timeout; declared buses are opened as soon as the
+** link comes up (and again after every link loss). Transactions work on undeclared buses too.
+*/
+int fs_umb_i2c_open(uint8_t bus);
+int fs_umb_spi_open(uint8_t bus, uint8_t cs);
+int fs_umb_can_open(uint8_t bus);
 
 int fs_umb_i2c(uint8_t bus, uint8_t addr, const uint8_t *tx, size_t tx_len, uint8_t *rx, size_t rx_len,
                uint32_t timeout_ms);

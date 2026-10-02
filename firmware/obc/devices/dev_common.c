@@ -5,6 +5,25 @@
 
 #include "fs_hal.h"
 
+int dev_open_all(void)
+{
+    int rc = FS_UMB_OK;
+    int i;
+
+    rc |= fs_umb_can_open(DEV_IMU_CAN_BUS);
+    rc |= fs_umb_spi_open(DEV_MAG_SPI_BUS, DEV_MAG_SPI_CS);
+    rc |= fs_umb_spi_open(DEV_FSS_SPI_BUS, DEV_FSS_SPI_CS);
+    rc |= fs_umb_i2c_open(DEV_CSS_I2C_BUS);
+    rc |= fs_umb_i2c_open(DEV_EPS_I2C_BUS);
+    rc |= fs_umb_uart_open(DEV_ST_UART);
+    for (i = 0; i < DEV_NUM_RW; i++)
+    {
+        rc |= fs_umb_uart_open((uint8_t)(DEV_RW_UART_BASE + i));
+    }
+    /* The GPS port is opened by dev_gps_init() */
+    return rc == FS_UMB_OK ? DEV_OK : DEV_ERR_BUS;
+}
+
 int dev_map_umb(int rc)
 {
     if (rc == FS_UMB_OK)

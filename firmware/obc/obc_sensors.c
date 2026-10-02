@@ -12,6 +12,8 @@ static const char *const device_names[] = {"IMU", "magnetometer", "fine sun sens
 
 #define NUM_TRACKED    (sizeof(device_names) / sizeof(device_names[0]))
 #define GPS_STALE_US   3000000u /* GPS logs once a second */
+/* After the link comes up the bridge opens ten buses at ~50 ms each (NCR-004); wait well past that */
+#define LINK_SETTLE_US 2000000u
 
 static uint16_t reported_faults; /* devices currently reported as failed */
 static uint64_t gps_last_fix_us;
@@ -49,6 +51,7 @@ void obc_sensors_init(void)
     reported_faults  = 0;
     obc.sensor_valid = 0;
     gps_last_fix_us  = 0;
+    dev_open_all();
     dev_gps_init();
 }
 
@@ -63,6 +66,10 @@ void obc_sensors_acquire(void)
     {
         obc.sensor_valid = 0;
         reported_faults  = 0;
+        return;
+    }
+    if (fs_umb_link_up_for_us() < LINK_SETTLE_US)
+    {
         return;
     }
 

@@ -43,6 +43,10 @@ extern "C" {
 #define DEV_NUM_CSS          6
 #define DEV_NUM_EPS_SWITCHES 8
 
+/* Declares every bus above to the umbilical so the bridge opens them as soon as the link is up
+** (first use would otherwise add ~50 ms to the first transaction on each, see NCR-004) */
+int dev_open_all(void);
+
 /* ---- IMU (generic_imu, CAN) ---- */
 
 typedef struct

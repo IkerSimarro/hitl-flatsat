@@ -413,6 +413,7 @@ The framing (COBS + CRC-16, header `type | bus | seq | status | addr`) is define
 | `0x20`/`0x21` | `I2C_TXN/RSP` | both | existing | NOS3 device sims on `i2c_N` |
 | `0x30`/`0x31` | `SPI_TXN/RSP` | both | existing | NOS3 device sims on `spi_N` |
 | `0x40`/`0x41` | `CAN_TXN/RSP` | both | existing | NOS3 device sims on `can_N`. Not related to IF-03. |
+| `0x22`/`0x32`/`0x42` | `I2C_OPEN`/`SPI_OPEN`/`CAN_OPEN` | OBC → | **new** | Open a bus ahead of its first transaction (NCR-004); no reply. `UART_OPEN` (0x12) does the same for serial ports. |
 | `0x50` | `CI_PKT` | → OBC | **changed** | Umbilical telecommand: one space packet from COSMOS `FLATSAT_UMB` |
 | `0x51` | `TO_PKT` | OBC → | **changed** | Umbilical telemetry: one space packet, sent to COSMOS `FLATSAT_UMB` |
 | `0x52`/`0x53` | `RADIO_RX/TX` | – | **deprecated** | NOS3 radio sim traffic, not used (DD-03) |
@@ -484,3 +485,4 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | 1.0 draft c | 2026-10-01 | UDP port allocation (§3.6); time source defined (§8.2); bridge implements §8; closed OI-02 |
 | 1.0 draft d | 2026-10-01 | Hardware selected (BOM): Pico-CAN-B, Pico-LoRa-SX1262; DD-07 reworded; closed OI-07, added OI-08 |
 | 1.0 draft e | 2026-10-02 | COSMOS integration of the umbilical (§3.6); enum keys quoted (NCR-002); closed OI-03 |
+| 1.0 draft f | 2026-10-02 | Bus open frames `I2C_OPEN`/`SPI_OPEN`/`CAN_OPEN` (§8.1, NCR-004) |
