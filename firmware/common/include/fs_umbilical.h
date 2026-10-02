@@ -77,6 +77,7 @@ int fs_umb_trq(uint8_t torquer, int16_t duty);
 
 /* ---- Packets and frames ---- */
 
+int fs_umb_heartbeat(void);                              /* HEARTBEAT: send at least 1 Hz (ICD 8.1) */
 int fs_umb_send_tm(const uint8_t *pkt, size_t len);       /* TO_PKT */
 int fs_umb_send_rf(const uint8_t *frame, size_t len);     /* RF_TX (software-in-the-loop only) */
 void fs_umb_log(const char *fmt, ...) __attribute__((format(printf, 1, 2))); /* LOG */

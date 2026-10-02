@@ -21,6 +21,22 @@ add_library(fs_common STATIC
 )
 target_include_directories(fs_common PUBLIC common/include ${HIL_PROTOCOL_DIR})
 
+# OBC drivers for the NOS3-simulated devices (ICD 8.3)
+add_library(obc_devices STATIC
+    obc/devices/dev_common.c
+    obc/devices/dev_imu.c
+    obc/devices/dev_mag.c
+    obc/devices/dev_fss.c
+    obc/devices/dev_css.c
+    obc/devices/dev_st.c
+    obc/devices/dev_gps.c
+    obc/devices/dev_rw.c
+    obc/devices/dev_eps.c
+    obc/devices/dev_trq.c
+)
+target_include_directories(obc_devices PUBLIC obc/devices)
+target_link_libraries(obc_devices PUBLIC fs_common)
+
 if(FLATSAT_PLATFORM STREQUAL "linux")
     add_library(fs_hal STATIC hal/linux/fs_hal_linux.c)
     target_include_directories(fs_hal PUBLIC common/include)
@@ -30,4 +46,8 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     add_executable(test_common tests/test_common.c tests/fake_hal.c)
     target_link_libraries(test_common fs_common)
     add_test(NAME test_common COMMAND test_common)
+
+    # Needs the SIL environment (sil/sil.sh), so it isn't registered with ctest
+    add_executable(test_devices tests/sil/test_devices.c)
+    target_link_libraries(test_devices obc_devices fs_common fs_hal m)
 endif()

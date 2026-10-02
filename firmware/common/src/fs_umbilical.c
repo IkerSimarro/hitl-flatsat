@@ -397,6 +397,11 @@ int fs_umb_trq(uint8_t torquer, int16_t duty)
     return send_frame(HIL_TRQ_CMD, torquer, next_seq++, 0, p, sizeof(p));
 }
 
+int fs_umb_heartbeat(void)
+{
+    return send_frame(HIL_HEARTBEAT, 0, next_seq++, 0, NULL, 0);
+}
+
 int fs_umb_send_tm(const uint8_t *pkt, size_t len)
 {
     return send_frame(HIL_TO_PKT, 0, next_seq++, 0, pkt, len);

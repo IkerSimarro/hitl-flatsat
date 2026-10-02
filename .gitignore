@@ -8,3 +8,6 @@ __pycache__/
 # Editor / OS
 .vscode/
 .DS_Store
+
+# Software-in-the-loop run logs
+sil/logs/
