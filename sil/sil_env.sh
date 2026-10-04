@@ -88,6 +88,10 @@ for sim in $SIMS; do
     (cd "$SIL_LOG_DIR" && exec "$SIM_BIN/nos3-single-simulator" -f "$SIM_CFG" "$sim" > "$SIL_LOG_DIR/$sim.log" 2>&1) &
 done
 
+# NOS3's command bus bridge: JSON over TCP 12020 to any simulator's command node (sil/sim_cmd.py), used
+# for fault injection such as {"node": "imu-command", "cmd": "DISABLE"}
+(cd "$SIL_LOG_DIR" && exec "$SIM_BIN/nos3-sim-cmdbus-bridge" -f "$SIM_CFG" > "$SIL_LOG_DIR/cmdbus-bridge.log" 2>&1) &
+
 # Ready when 42 truth data arrives (42 only starts stepping once every simulator is connected)
 log "waiting for 42 and the simulators..."
 if ! python3 - <<'EOF'

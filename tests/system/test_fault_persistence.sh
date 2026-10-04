@@ -1,9 +1,11 @@
 #!/bin/bash
 #
-# Fault injection: freezes the IMU simulator (SIGSTOP) briefly and then for longer, and checks the OBC
+# Fault injection: disables the IMU simulator through NOS3's command bus, briefly and then for longer
+# (it stays connected to 42 but stops answering as a device), and checks the OBC
 # counts isolated missed reads without declaring a fault, but declares one after 3 consecutive misses
-# and reports the recovery (NCR-005). Known limitation: a frozen simulator blocks the bridge, so every
-# device misses during the freeze (NCR-006, open). Runs inside the SIL environment:
+# and reports the recovery (NCR-005), and that the freeze affects only the IMU: the bridge's per-bus
+# workers keep every other device and the umbilical link running (NCR-006). Runs inside the SIL
+# environment:
 #
 #   sil/sil.sh tests/system/test_fault_persistence.sh
 #
@@ -15,8 +17,10 @@ OBC_LOG=$SIL_LOG_DIR/obc.log
 OBC=$!
 trap 'kill $OBC 2> /dev/null' EXIT
 
-imu() { pkill "-$1" -f "nos3-single-simulator .* generic-imu-sim"; }
+imu() { python3 "$ROOT/sil/sim_cmd.py" imu-command "$1"; }
 faults() { grep -c "IMU failed" "$OBC_LOG"; }
+all_faults() { grep -c " failed: " "$OBC_LOG"; }
+link_drops() { grep -c "link down" "$OBC_LOG"; }
 recoveries() { grep -c "IMU recovered" "$OBC_LOG"; }
 
 # Latest OBC_HK SENSOR_MISSES from the umbilical telemetry (port 9011 inside the SIL container)
@@ -49,19 +53,32 @@ sleep 8 # link up, buses opened, a few clean acquisition cycles
 m0=$(misses)
 check "$([ "$m0" = "0" ] && echo 1)" "no misses in normal operation (SENSOR_MISSES $m0)"
 
-# Short freeze: one or two missed reads, no fault event
-imu STOP; sleep 1.5; imu CONT; sleep 3
+# Short outage: one or two IMU reads missed (at 1 Hz), nothing else, no fault event
+imu DISABLE; sleep 1.5; imu ENABLE; sleep 3
 m1=$(misses)
-check "$([ "$(faults)" = "0" ] && [ "$m1" -ge 1 ] && echo 1)" \
-    "1.5 s freeze: misses counted ($m0 -> $m1), no fault declared ($(faults) fault events)"
+check "$([ "$(faults)" = "0" ] && [ "$m1" -ge 1 ] && [ "$m1" -le 3 ] && echo 1)" \
+    "1.5 s outage: $m1 IMU reads missed (expected 1-3), no fault declared ($(faults) fault events)"
 
-# Long freeze: fault declared once after 3 consecutive misses, then recovery. While the IMU sim is
-# frozen the bridge is blocked too (NCR-006, open), so the other devices miss and the umbilical link
-# drops; after it returns the OBC waits its 2 s settle time, hence the longer wait before checking.
-imu STOP; sleep 6; imu CONT; sleep 8
+# Long outage: the IMU is declared failed after 3 consecutive misses and recovers afterwards
+imu DISABLE; sleep 6; imu ENABLE; sleep 4
 m2=$(misses)
 check "$([ "$(faults)" = "1" ] && [ "$(recoveries)" = "1" ] && echo 1)" \
-    "6 s freeze: exactly one fault and one recovery event ($(faults) / $(recoveries)), misses $m1 -> $m2"
+    "6 s outage: one IMU fault and one IMU recovery event ($(faults) / $(recoveries)), misses $m1 -> $m2"
+
+# Isolation (NCR-006): no other device faulted and the umbilical stayed up throughout
+check "$([ "$(all_faults)" = "1" ] && [ "$(link_drops)" = "0" ] && echo 1)" \
+    "fault isolated to the IMU: $(all_faults) device fault event(s) in total, $(link_drops) link drop(s)"
+
+# Unresponsive simulator (NCR-006): freezing the IMU simulator process means its bus never answers.
+# The bridge's IMU worker waits while the other buses carry on. 42 stalls too while the frozen
+# simulator stops reading its socket, so GPS fixes stop and GPS may legitimately fault; every other
+# bus device must keep working and the umbilical must stay up.
+before=$(all_faults)
+pkill -STOP -f "nos3-single-simulator .* generic-imu-sim"; sleep 6; pkill -CONT -f "nos3-single-simulator .* generic-imu-sim"
+sleep 5
+others=$(sed -n "$((before + 1)),\$p" <(grep " failed: " "$OBC_LOG") | grep -v -c "IMU failed\|GPS failed")
+check "$([ "$others" = "0" ] && [ "$(link_drops)" = "0" ] && echo 1)" \
+    "IMU simulator frozen 6 s: $others bus device fault(s) besides IMU/GPS, $(link_drops) link drop(s)"
 
 echo "OBC events:"
 grep "EVENT" "$OBC_LOG" | sed 's/^/  /'
