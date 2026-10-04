@@ -9,7 +9,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-003](#ncr-003) | 2026-10-02 | GPS port open request lost before the bridge attaches | Minor | Closed |
 | [NCR-004](#ncr-004) | 2026-10-02 | Star tracker and wheel reads time out right after start-up | Minor | Closed |
 | [NCR-005](#ncr-005) | 2026-10-02 | Isolated late replies raise sensor fault events | Minor | Closed |
-| [NCR-006](#ncr-006) | 2026-10-02 | One stalled simulator blocks the bridge for every device | Major | Open |
+| [NCR-006](#ncr-006) | 2026-10-02 | One stalled simulator blocks the bridge for every device | Major | Closed |
 | [NCR-007](#ncr-007) | 2026-10-02 | COSMOS Launcher crashes after the legal agreement | Major | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
@@ -141,13 +141,23 @@ Severity: **Critical** invalidates results or risks hardware; **Major** a functi
 | Found by | Fault injection `tests/system/test_fault_persistence.sh`: freezing only the IMU simulator made every device miss, and a 6 s freeze dropped the umbilical link |
 | Item | HIL bridge `nos3/components/hil_bridge/sim/src/hil_bridge.c` |
 | Severity | Major: one unresponsive device takes every other device down with it, so the OBC can't isolate the faulty one; the same coupling makes load spikes affect all devices at once |
-| Status | Open, planned for Phase 2 |
+| Status | Closed 2026-10-04 |
 
 **Root cause.** The bridge is single-threaded, and NOS Engine bus calls block until the simulator answers. Every synchronous-operation timeout in the NOS Engine C API defaults to infinite (measured). Setting `NE_set_default_timeout()` for send and receive to 80 ms had no effect on CAN transactions, and that change was reverted.
 
-**Planned fix.** One worker thread per bus in the bridge, with a deadline per transaction. A stalled bus answers `BUS_ERROR` while the other buses carry on. This matters for the hardware phase too, because the real OBC will read the simulated sensors through the same bridge.
+**Fix.** One worker thread per I2C, SPI and CAN bus in the bridge. The main thread keeps the serial link, UDP, UART polling and simulation time, and hands each transaction to its bus's worker without waiting. If that worker is still stuck on an earlier transaction, the new request is answered `BUS_ERROR` at once. Serial output and bus opening are protected by mutexes. At shutdown, buses with a stuck worker are left open rather than closed, because closing could block. This matters for the hardware phase too: the real OBC reads the simulated sensors through the same bridge.
 
-**Workaround.** None needed for normal operation. The persistence filter (NCR-005) already prevents false alarms for short stalls.
+**Verification** (`tests/system/test_fault_persistence.sh`, 5/5):
+- **Unresponsive IMU simulator** (process frozen for 6 s):
+  - the IMU is answered "bus busy" (`-1`) and declared failed, then recovered;
+  - every other bus device keeps working and the umbilical never drops.
+  - Before the fix, every device faulted and the link dropped. GPS also faults, because freezing a simulator process stalls 42 itself while the simulator stops reading 42's socket, so GPS fixes really do stop. That is a property of this injection method, not of the flight software.
+- **Disabled IMU** (NOS3 command bus `DISABLE`, which leaves the simulator connected to 42), the clean single-device failure:
+  - a 1.5 s outage costs one reading and raises no fault;
+  - a 6 s outage gives one IMU fault, one recovery, no other device affected and no link drop.
+- **Full regression passes:** bridge end to end, devices 14/14, OBC system test 12/12, COSMOS end to end 7/7.
+
+**New test capability.** The SIL environment now runs NOS3's command bus bridge, and `sil/sim_cmd.py` sends commands to any simulator. This is the fault-injection mechanism for the Phase 3 test campaign.
 
 ---
 
