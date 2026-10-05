@@ -6,8 +6,10 @@
 
 #include "fake_hal.h"
 #include "flatsat_icd.h"
+#include "fs_can.h"
 #include "fs_ccsds.h"
 #include "fs_hal.h"
+#include "fs_node.h"
 #include "fs_persist.h"
 #include "fs_sched.h"
 #include "fs_time.h"
@@ -379,6 +381,148 @@ static void test_persistence(void)
     CHECK(fs_persist_update(&p, 1) == FS_PERSIST_CLEARED);
 }
 
+
+/* ---- CAN messaging ---- */
+
+static int     got_rw_cmd;
+static uint8_t got_rw_cmd_src;
+static flatsat_can_rw_cmd_t got_rw;
+
+static void on_rw_cmd(uint8_t src, const void *payload, uint8_t dlc)
+{
+    (void)dlc;
+    got_rw_cmd++;
+    got_rw_cmd_src = src;
+    memcpy(&got_rw, payload, sizeof(got_rw));
+}
+
+static void test_can(void)
+{
+    flatsat_can_rw_tlm_t tlm = {.wheel = 0, .status = 1, .speed = -1234, .setpoint_echo = 500, .duty = -40, .seq_echo = 9};
+    flatsat_can_rw_cmd_t cmd = {.wheel = 0, .ctrl_mode = FLATSAT_RW_CTRL_MODE_SPEED, .setpoint = 600, .seq = 3};
+    uint8_t              junk[8] = {0};
+
+    fake_hal_reset();
+    fs_can_init(FLATSAT_NODE_ADCS);
+
+    /* Send: ID = type << 4 | own node, DLC from the ICD */
+    CHECK(fs_can_send(FLATSAT_CAN_RW_TLM_TYPE, &tlm) == 0);
+    CHECK(fake_can_sent_count == 1);
+    CHECK(fake_can_sent[0].id == 0x112 && fake_can_sent[0].dlc == FLATSAT_CAN_RW_TLM_DLC);
+    CHECK(memcmp(fake_can_sent[0].data, &tlm, sizeof(tlm)) == 0);
+    CHECK(fs_can_send(0x55, &tlm) != 0); /* not a FlatSat message */
+
+    /* Receive: dispatched by type with the sender's node */
+    fs_can_subscribe(FLATSAT_CAN_RW_CMD_TYPE, on_rw_cmd);
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_RW_CMD_TYPE, FLATSAT_NODE_OBC), &cmd, FLATSAT_CAN_RW_CMD_DLC);
+    fs_can_poll();
+    CHECK(got_rw_cmd == 1 && got_rw_cmd_src == FLATSAT_NODE_OBC);
+    CHECK(got_rw.setpoint == 600 && got_rw.ctrl_mode == FLATSAT_RW_CTRL_MODE_SPEED);
+
+    /* Wrong length and unknown type are counted and dropped; own frames are ignored */
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_RW_CMD_TYPE, FLATSAT_NODE_OBC), &cmd, 4);
+    fake_can_inject(FLATSAT_CAN_ID(0x55, FLATSAT_NODE_OBC), junk, 8);
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_RW_CMD_TYPE, FLATSAT_NODE_ADCS), &cmd, FLATSAT_CAN_RW_CMD_DLC);
+    fs_can_poll();
+    CHECK(got_rw_cmd == 1);
+    CHECK(fs_can_stats()->rx_errors == 2 && fs_can_stats()->rx == 1 && fs_can_stats()->tx == 1);
+}
+
+/* ---- Node services ---- */
+
+static int     safe_calls;
+static uint8_t last_mode;
+
+static void node_enter_safe(const char *reason)
+{
+    (void)reason;
+    safe_calls++;
+}
+
+static void node_mode(uint8_t mode)
+{
+    last_mode = mode;
+}
+
+static uint8_t node_state(void)
+{
+    return FLATSAT_NODE_STATE_NOMINAL;
+}
+
+static unsigned count_sent(uint8_t type)
+{
+    unsigned i, n = 0;
+    for (i = 0; i < fake_can_sent_count; i++)
+    {
+        n += FLATSAT_CAN_TYPE(fake_can_sent[i].id) == type;
+    }
+    return n;
+}
+
+static void test_node(void)
+{
+    fs_node_callbacks_t     cbs = {.enter_safe = node_enter_safe, .mode_changed = node_mode, .state = node_state};
+    flatsat_can_heartbeat_t obc_hb;
+    flatsat_can_node_cmd_t  ping = {.target = FLATSAT_NODE_EPS, .cmd = FLATSAT_NODE_CMD_PING};
+    flatsat_can_node_cmd_t  other = {.target = FLATSAT_NODE_ADCS, .cmd = FLATSAT_NODE_CMD_RESET};
+    flatsat_can_node_cmd_t  safe = {.target = FLATSAT_NODE_EPS, .cmd = FLATSAT_NODE_CMD_ENTER_SAFE};
+    flatsat_can_node_cmd_t  reset = {.target = FLATSAT_NODE_EPS, .cmd = FLATSAT_NODE_CMD_RESET};
+    flatsat_can_mode_t      mode = {.mode = FLATSAT_MODE_DETUMBLE};
+    flatsat_can_time_sync_t ts = {.seconds = 814254300u, .subseconds = 0};
+    fs_time_t               epoch = {814254200u, 0};
+    int                     i;
+
+    fake_hal_reset();
+    fake_reboots = 0;
+    safe_calls   = 0;
+    fs_time_init(epoch);
+    fs_node_init(FLATSAT_NODE_EPS, &cbs);
+    memset(&obc_hb, 0, sizeof(obc_hb));
+
+    /* Heartbeat at once, then every second: 11 in 10.5 s */
+    for (i = 0; i < 105; i++)
+    {
+        fs_node_service();
+        fake_now_us += 100000;
+    }
+    CHECK(count_sent(FLATSAT_CAN_HEARTBEAT_TYPE) == 11);
+    CHECK(fake_can_sent[0].id == FLATSAT_CAN_ID(FLATSAT_CAN_HEARTBEAT_TYPE, FLATSAT_NODE_EPS));
+
+    /* No OBC heard yet: nothing to lose */
+    CHECK(safe_calls == 0 && !fs_node_obc_alive());
+
+    /* OBC heartbeat, then 3 s of silence: safe exactly once */
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_HEARTBEAT_TYPE, FLATSAT_NODE_OBC), &obc_hb, FLATSAT_CAN_HEARTBEAT_DLC);
+    fs_can_poll();
+    CHECK(fs_node_obc_alive());
+    for (i = 0; i < 60; i++)
+    {
+        fs_node_service();
+        fake_now_us += 100000;
+    }
+    CHECK(safe_calls == 1 && !fs_node_obc_alive());
+
+    /* Time sync and mode from the OBC */
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_TIME_SYNC_TYPE, FLATSAT_NODE_OBC), &ts, FLATSAT_CAN_TIME_SYNC_DLC);
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_MODE_TYPE, FLATSAT_NODE_OBC), &mode, FLATSAT_CAN_MODE_DLC);
+    fs_can_poll();
+    CHECK(fs_time_now().seconds == 814254300u && fs_time_source() == FLATSAT_TIME_SOURCE_UMBILICAL);
+    CHECK(last_mode == FLATSAT_MODE_DETUMBLE && fs_node_obc_mode() == FLATSAT_MODE_DETUMBLE);
+
+    /* Node commands: ping and enter-safe for us are acknowledged; another node's reset is ignored */
+    fake_can_sent_count = 0;
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_NODE_CMD_TYPE, FLATSAT_NODE_OBC), &ping, FLATSAT_CAN_NODE_CMD_DLC);
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_NODE_CMD_TYPE, FLATSAT_NODE_OBC), &other, FLATSAT_CAN_NODE_CMD_DLC);
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_NODE_CMD_TYPE, FLATSAT_NODE_OBC), &safe, FLATSAT_CAN_NODE_CMD_DLC);
+    fs_can_poll();
+    CHECK(count_sent(FLATSAT_CAN_NODE_ACK_TYPE) == 2 && fake_reboots == 0 && safe_calls == 2);
+
+    /* Reset: acknowledged, then reboot */
+    fake_can_inject(FLATSAT_CAN_ID(FLATSAT_CAN_NODE_CMD_TYPE, FLATSAT_NODE_OBC), &reset, FLATSAT_CAN_NODE_CMD_DLC);
+    fs_can_poll();
+    CHECK(count_sent(FLATSAT_CAN_NODE_ACK_TYPE) == 3 && fake_reboots == 1);
+}
+
 int main(void)
 {
     fs_hal_init(0, NULL);
@@ -391,6 +535,8 @@ int main(void)
     test_umbilical();
     test_uart_reopen_on_link_up();
     test_persistence();
+    test_can();
+    test_node();
 
     if (failures)
     {

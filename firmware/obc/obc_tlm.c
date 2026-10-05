@@ -7,6 +7,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "adcs_params.h"
+#include "fs_can.h"
 #include "fs_ccsds.h"
 #include "fs_hal.h"
 #include "fs_sched.h"
@@ -23,6 +25,8 @@ typedef struct
     uint16_t      period_ms; /* 0 = off */
     uint64_t      next_us;
 } tlm_entry_t;
+
+#define LOW_POWER_RATE_DIVIDER 10
 
 static uint64_t boot_us;
 
@@ -47,9 +51,12 @@ static void build_obc_hk(void *p)
     t->reset_cause      = obc.reset_cause;
     t->reset_count      = obc.reset_count;
     t->cpu_load         = fs_sched_cpu_load();
-    t->node_alive_mask  = 1u << FLATSAT_NODE_OBC; /* the other nodes join over CAN in Phase 2 */
+    t->node_alive_mask  = obc_can_alive_mask();
     t->time_source      = fs_time_source();
     t->link_flags       = fs_umb_link_up() ? 0x01 : 0x00;
+    t->can_tx_count     = fs_can_stats()->tx;
+    t->can_rx_count     = fs_can_stats()->rx;
+    t->can_error_count  = (uint16_t)(fs_can_stats()->tx_errors + fs_can_stats()->rx_errors);
     fs_hal_can_error_counters(&t->can_tec, &t->can_rec);
     t->event_count   = obc.event_count;
     t->sensor_misses = obc.sensor_misses;
@@ -70,10 +77,10 @@ static void build_beacon(void *p)
     t->fault_flags      = (uint8_t)((~obc.sensor_valid) & 0xFF);
     t->cmd_accept_count = obc.cmd_accept_count;
     t->sim_batt_mv      = (uint16_t)(obc.eps.batt_v * 1000.0f);
-    t->real_batt_mv     = 0; /* EPS node, Phase 2 */
+    t->real_batt_mv     = obc.eps_real.batt_mv;
     t->body_rate        = (uint16_t)(sqrt(w) * 1000.0);
     t->eclipse          = obc.eclipse;
-    t->node_alive_mask  = 1u << FLATSAT_NODE_OBC;
+    t->node_alive_mask  = obc_can_alive_mask();
     t->event_count      = obc.event_count;
 }
 
@@ -82,14 +89,43 @@ static void build_adcs_state(void *p)
     flatsat_adcs_state_t *t = p;
     int                   i;
 
-    t->adcs_mode = FLATSAT_ADCS_MODE_OFF; /* control laws arrive in Phase 2 */
+    t->adcs_mode      = obc.adcs.adcs_mode;
+    t->sun_valid      = obc.adcs.sun_valid;
+    t->converged      = obc.adcs.converged;
+    t->pointing_error = obc.adcs.pointing_error;
+    t->auto_modes     = obc.adcs.auto_modes;
     for (i = 0; i < 3; i++)
     {
-        t->rate_est[i]     = obc.imu.rate[i];
-        t->mag_body[i]     = obc.mag.field[i];
-        t->rw_sim_speed[i] = (float)obc.rw_momentum[i]; /* momentum until the wheel inertia is in the ADCS module */
-        t->trq_duty[i]     = obc.trq_duty[i];
+        t->rate_est[i]       = obc.imu.rate[i];
+        t->mag_body[i]       = obc.mag.field[i];
+        t->sun_body[i]       = obc.adcs.sun[i];
+        t->rw_cmd_torque[i]  = obc.adcs.rw_torque[i];
+        t->rw_sim_speed[i]   = (float)obc.rw_momentum[i] / ADCS_RW_INERTIA;
+        t->trq_duty[i]       = obc.trq_duty[i];
     }
+    t->phys_rw_status     = obc.phys_wheel.status;
+    t->phys_rw_cmd_speed  = (float)(obc.phys_wheel.cmd_rpm * 2.0 * M_PI / 60.0);
+    t->phys_rw_meas_speed = (float)(obc.phys_wheel.meas_rpm * 2.0 * M_PI / 60.0);
+}
+
+static void build_eps_real(void *p)
+{
+    flatsat_eps_real_t *t = p;
+    int                 i;
+
+    for (i = 0; i < 3; i++)
+    {
+        t->rail_mv[i] = obc.eps_real.rail_mv[i];
+        t->rail_ma[i] = obc.eps_real.rail_ma[i];
+        t->rail_mw[i] = obc.eps_real.rail_mw[i];
+    }
+    t->batt_mv           = obc.eps_real.batt_mv;
+    t->batt_ma           = obc.eps_real.batt_ma;
+    t->charge_state      = obc.eps_real.charge_state;
+    t->switch_mask       = obc.eps_real.switch_mask;
+    t->switch_fault_mask = obc.eps_real.switch_fault_mask;
+    t->eps_node_state    = obc.nodes[FLATSAT_NODE_EPS].state;
+    t->eps_uptime        = obc.nodes[FLATSAT_NODE_EPS].uptime;
 }
 
 static void build_adcs_sensors(void *p)
@@ -152,6 +188,7 @@ static tlm_entry_t table[] = {
     {FLATSAT_ADCS_STATE_MID, sizeof(flatsat_adcs_state_t), build_adcs_state, 1000, 0},
     {FLATSAT_ADCS_SENSORS_MID, sizeof(flatsat_adcs_sensors_t), build_adcs_sensors, 1000, 0},
     {FLATSAT_EPS_SIM_MID, sizeof(flatsat_eps_sim_t), build_eps_sim, 1000, 0},
+    {FLATSAT_EPS_REAL_MID, sizeof(flatsat_eps_real_t), build_eps_real, 1000, 0},
     {FLATSAT_COMMS_STATS_MID, sizeof(flatsat_comms_stats_t), build_comms_stats, 1000, 0},
 };
 
@@ -187,6 +224,19 @@ void obc_tlm_init(void)
     }
 }
 
+/* LOW_POWER (ICD 5.1): packets other than housekeeping, the beacon and power go out at a tenth of their rate */
+static uint64_t effective_period_us(const tlm_entry_t *e)
+{
+    uint64_t us = (uint64_t)e->period_ms * 1000u;
+
+    if (obc.mode == FLATSAT_MODE_LOW_POWER && e->mid != FLATSAT_OBC_HK_MID && e->mid != FLATSAT_BEACON_MID &&
+        e->mid != FLATSAT_EPS_SIM_MID && e->mid != FLATSAT_EPS_REAL_MID)
+    {
+        us *= LOW_POWER_RATE_DIVIDER;
+    }
+    return us;
+}
+
 void obc_tlm_service(void)
 {
     uint64_t now = fs_hal_time_us();
@@ -194,14 +244,19 @@ void obc_tlm_service(void)
 
     for (i = 0; i < TABLE_LEN; i++)
     {
-        tlm_entry_t *e = &table[i];
+        tlm_entry_t *e      = &table[i];
+        uint64_t     period = effective_period_us(e);
+        if (e->period_ms != 0 && e->next_us > now + period)
+        {
+            e->next_us = now + period; /* the rate went up (leaving LOW_POWER): don't wait out the slow period */
+        }
         if (e->period_ms != 0 && now >= e->next_us)
         {
             send_entry(e);
-            e->next_us += (uint64_t)e->period_ms * 1000u;
+            e->next_us += period;
             if (e->next_us <= now)
             {
-                e->next_us = now + (uint64_t)e->period_ms * 1000u; /* fell behind: don't burst */
+                e->next_us = now + period; /* fell behind: don't burst */
             }
         }
     }

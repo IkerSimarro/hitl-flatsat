@@ -3,7 +3,8 @@
 
 Acts as COSMOS would: receives the bridge's telemetry on UDP 9011 and sends commands to UDP 9010.
 
-    sil/sil.sh 'firmware/build/obc --umb-pty $SIL_UMB_PTY --can none & python3 tests/system/test_obc_umbilical.py'
+    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+                python3 tests/system/test_obc_umbilical.py'
 """
 import pathlib
 import socket
@@ -78,6 +79,10 @@ def check(ok, name, detail):
 
 def main():
     g = Ground()
+    g.wait_for("OBC_HK", 20.0)
+    # NOS3's 2.8 deg/s deployment tip-off would start automatic detumbling; this test needs a quiet spacecraft
+    # (tests/system/test_adcs.py covers the automatic modes)
+    g.send("OBC_SET_AUTO_MODES", STATE=icd.SWITCH_STATE["OFF"])
 
     # Telemetry flowing at the default rates
     g.pump(1.0)

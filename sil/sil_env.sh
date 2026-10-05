@@ -54,6 +54,11 @@ for f in "$SIM_BIN/nos3-single-simulator" "$SIM_BIN/nos3-hil-bridge" "$FORTYTWO_
     fi
 done
 
+# FlatSat CAN bus between the node processes (OBC, ADCS, EPS): virtual CAN interface vcan0
+if [ -x "$ROOT/firmware/build/vcan_up" ]; then
+    "$ROOT/firmware/build/vcan_up" vcan0 > /dev/null || echo "[sil] warning: no CAN bus (vcan0)" >&2
+fi
+
 cp "$NOS3/cfg/build/sims/sim_log_config.xml" "$SIL_LOG_DIR/"
 SIM_CFG=$SIM_BIN/nos3-simulator.xml
 
@@ -65,11 +70,23 @@ log "logs in $SIL_LOG_DIR"
     > "$SIL_LOG_DIR/nos-engine-server.log" 2>&1 &
 sleep 1
 
+# 42 must carry the socket parsing fix (NCR-010): without it, stale actuator commands are re-applied
+if ! grep -q "NCR-010" "$FORTYTWO_DIR/Source/AutoCode/TxRxIPC.c" 2> /dev/null; then
+    echo "[sil] 42 lacks the NCR-010 fix: run 'git apply $NOS3/scripts/cfg/patches/42-ipc-parse-bound.patch' in" \
+         "$FORTYTWO_DIR and rebuild it (or re-run make prep)" >&2
+    exit 1
+fi
+
 # 42 with the mission's InOut files; graphics off unless SIL_GRAPHICS=1 (needs DISPLAY)
 rm -rf "$FORTYTWO_DIR/$INOUT_NAME"
 cp -r "$NOS3/cfg/build/InOut" "$FORTYTWO_DIR/$INOUT_NAME"
 if [ "${SIL_GRAPHICS:-0}" != "1" ]; then
     sed -i 's/^TRUE\( *!  Graphics Front End\)/FALSE\1/' "$FORTYTWO_DIR/$INOUT_NAME/Inp_Sim.txt"
+fi
+# Initial body rates in deg/s, e.g. SIL_INIT_RATES="2 -3 4" for a tumbling start (detumble tests)
+if [ -n "${SIL_INIT_RATES:-}" ]; then
+    sed -i "s/^.*\(! Ang Vel (deg\/sec)\)/$SIL_INIT_RATES    \1/" "$FORTYTWO_DIR/$INOUT_NAME/SC_NOS3.txt"
+    echo "[sil] initial body rates $SIL_INIT_RATES deg/s"
 fi
 # Without a GPU, Mesa's llvmpipe renders 42's windows with one thread per CPU, once per simulated
 # second; on a laptop those bursts delayed the bridge past its 100 ms deadline. Two render threads and a

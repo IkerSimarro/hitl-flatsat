@@ -5,8 +5,10 @@
 ** checked for a valid CCSDS command header and checksum (fs_cmd_parse), a known MID and function code,
 ** and the exact length from the ICD, before it runs. Every rejection is counted and raises an event.
 */
+#include <math.h>
 #include <string.h>
 
+#include "adcs_params.h"
 #include "fs_ccsds.h"
 #include "fs_hal.h"
 #include "obc.h"
@@ -14,6 +16,8 @@
 #define CMD_QUEUE_LEN 8
 #define CMD_MAX_LEN   64
 #define REBOOT_MAGIC  0x0B0075EDu
+/* Wheel momentum limit over rotor inertia: ~629 rad/s */
+#define RW_MANUAL_MAX_SPEED 600.0f
 
 typedef struct
 {
@@ -152,8 +156,18 @@ static void exec_obc(const fs_cmd_t *cmd, fs_time_t rx_time)
             break;
 
         case FLATSAT_OBC_NODE_RESET_FC:
-            not_implemented("OBC_NODE_RESET (CAN nodes, Phase 2)");
+        {
+            ARGS(flatsat_obc_node_reset_t, cmd, a);
+            if (obc_can_node_command(a.node, FLATSAT_NODE_CMD_RESET) == 0)
+            {
+                accept(cmd);
+            }
+            else
+            {
+                reject(cmd->mid, cmd->fc, "not a resettable node");
+            }
             break;
+        }
 
         case FLATSAT_OBC_REBOOT_FC:
         {
@@ -166,6 +180,20 @@ static void exec_obc(const fs_cmd_t *cmd, fs_time_t rx_time)
             accept(cmd);
             obc_event(EVT_REBOOT, FLATSAT_SEVERITY_WARNING, "reboot commanded");
             fs_hal_reboot();
+            break;
+        }
+
+        case FLATSAT_OBC_SET_AUTO_MODES_FC:
+        {
+            ARGS(flatsat_obc_set_auto_modes_t, cmd, a);
+            if (a.state > FLATSAT_SWITCH_STATE_ON)
+            {
+                reject(cmd->mid, cmd->fc, "state must be OFF or ON");
+                break;
+            }
+            obc.adcs.auto_modes = a.state;
+            accept(cmd);
+            obc_event(EVT_ADCS, FLATSAT_SEVERITY_INFO, "automatic mode transitions %s", a.state ? "on" : "off");
             break;
         }
 
@@ -187,6 +215,11 @@ static void exec_adcs(const fs_cmd_t *cmd)
         case FLATSAT_ADCS_SET_BDOT_GAIN_FC:
         {
             ARGS(flatsat_adcs_set_bdot_gain_t, cmd, a);
+            if (!(a.gain > 0.0f && a.gain <= 10000.0f)) /* also rejects NaN */
+            {
+                reject(cmd->mid, cmd->fc, "B-dot gain out of range (0, 10000]");
+                break;
+            }
             obc.bdot_gain = a.gain;
             accept(cmd);
             break;
@@ -195,6 +228,11 @@ static void exec_adcs(const fs_cmd_t *cmd)
         case FLATSAT_ADCS_SET_SUN_GAINS_FC:
         {
             ARGS(flatsat_adcs_set_sun_gains_t, cmd, a);
+            if (!(a.kp > 0.0f && a.kp <= 1.0f && a.kd > 0.0f && a.kd <= 10.0f))
+            {
+                reject(cmd->mid, cmd->fc, "sun gains out of range: kp (0, 1], kd (0, 10]");
+                break;
+            }
             obc.sun_kp = a.kp;
             obc.sun_kd = a.kd;
             accept(cmd);
@@ -202,8 +240,24 @@ static void exec_adcs(const fs_cmd_t *cmd)
         }
 
         case FLATSAT_ADCS_RW_MANUAL_FC:
-            not_implemented("ADCS_RW_MANUAL (wheel speed loop, Phase 2)");
+        {
+            ARGS(flatsat_adcs_rw_manual_t, cmd, a);
+            if (obc.mode != FLATSAT_MODE_TEST)
+            {
+                reject(cmd->mid, cmd->fc, "manual actuators only in TEST mode");
+            }
+            else if (a.wheel >= DEV_NUM_RW || !(fabsf(a.speed) <= RW_MANUAL_MAX_SPEED))
+            {
+                reject(cmd->mid, cmd->fc, "invalid wheel or speed");
+            }
+            else
+            {
+                obc.adcs.manual_rw[a.wheel]       = 1;
+                obc.adcs.manual_rw_speed[a.wheel] = a.speed;
+                accept(cmd);
+            }
             break;
+        }
 
         case FLATSAT_ADCS_TRQ_MANUAL_FC:
         {
@@ -219,6 +273,28 @@ static void exec_adcs(const fs_cmd_t *cmd)
             else
             {
                 obc.trq_duty[a.torquer] = a.duty;
+                accept(cmd);
+            }
+            break;
+        }
+
+        case FLATSAT_ADCS_PHYS_WHEEL_TEST_FC:
+        {
+            ARGS(flatsat_adcs_phys_wheel_test_t, cmd, a);
+            if (obc.mode != FLATSAT_MODE_TEST)
+            {
+                reject(cmd->mid, cmd->fc, "physical wheel test only in TEST mode");
+            }
+            else if (a.ctrl_mode > FLATSAT_RW_CTRL_MODE_DUTY ||
+                     (a.ctrl_mode == FLATSAT_RW_CTRL_MODE_DUTY && (a.setpoint > 10000 || a.setpoint < -10000)))
+            {
+                reject(cmd->mid, cmd->fc, "invalid wheel mode or set point");
+            }
+            else
+            {
+                obc.phys_wheel.test_override = 1;
+                obc.phys_wheel.test_mode     = a.ctrl_mode;
+                obc.phys_wheel.test_setpoint = a.setpoint;
                 accept(cmd);
             }
             break;
@@ -240,8 +316,20 @@ static void exec_eps(const fs_cmd_t *cmd)
             break;
 
         case FLATSAT_EPS_SWITCH_FC:
-            not_implemented("EPS_SWITCH (EPS node over CAN, Phase 2)");
+        {
+            ARGS(flatsat_eps_switch_t, cmd, a);
+            if (obc_can_switch(a.switch_id, a.state) == 0)
+            {
+                accept(cmd);
+                obc_event(EVT_EPS_SWITCH, FLATSAT_SEVERITY_INFO, "FlatSat switch %u %s requested", a.switch_id,
+                          a.state ? "ON" : "OFF");
+            }
+            else
+            {
+                reject(cmd->mid, cmd->fc, "invalid switch");
+            }
             break;
+        }
 
         case FLATSAT_EPS_SIM_SWITCH_FC:
         {

@@ -24,6 +24,12 @@ uint8_t  fake_last_payload[256];
 size_t   fake_last_len;
 unsigned fake_frames_from_fw;
 
+fs_can_frame_t        fake_can_sent[FAKE_CAN_MAX];
+unsigned              fake_can_sent_count;
+static fs_can_frame_t can_rx_queue[FAKE_CAN_MAX];
+static unsigned       can_rx_head;
+static unsigned       can_rx_tail;
+
 static hil_decoder_t dec;
 static hil_frame_t   frame;
 static hil_frame_t   reply;
@@ -104,6 +110,8 @@ void fake_hal_reset(void)
     fake_frames_from_fw = 0;
     to_fw_len = to_fw_pos = 0;
     hil_decoder_init(&dec);
+    fake_can_sent_count = 0;
+    can_rx_head = can_rx_tail = 0;
 }
 
 /* ---- HAL ---- */
@@ -153,16 +161,35 @@ int fs_hal_umb_read(uint8_t *buf, size_t max)
     return (int)n;
 }
 
+void fake_can_inject(uint16_t id, const void *data, uint8_t dlc)
+{
+    fs_can_frame_t *f = &can_rx_queue[can_rx_head % FAKE_CAN_MAX];
+
+    f->id  = id;
+    f->dlc = dlc;
+    memset(f->data, 0, sizeof(f->data));
+    memcpy(f->data, data, dlc);
+    can_rx_head++;
+}
+
 int fs_hal_can_send(const fs_can_frame_t *f)
 {
-    (void)f;
+    if (fake_can_sent_count < FAKE_CAN_MAX)
+    {
+        fake_can_sent[fake_can_sent_count++] = *f;
+    }
     return 0;
 }
 
 int fs_hal_can_recv(fs_can_frame_t *f)
 {
-    (void)f;
-    return 0;
+    if (can_rx_tail == can_rx_head)
+    {
+        return 0;
+    }
+    *f = can_rx_queue[can_rx_tail % FAKE_CAN_MAX];
+    can_rx_tail++;
+    return 1;
 }
 
 void fs_hal_can_error_counters(uint8_t *tec, uint8_t *rec)
@@ -176,11 +203,18 @@ uint8_t fs_hal_reset_cause(void)
     return FLATSAT_RESET_CAUSE_POWER_ON;
 }
 
+int fake_reboots;
+
 void fs_hal_reboot(void)
 {
+    fake_reboots++;
 }
 
 void fs_hal_watchdog_kick(void)
+{
+}
+
+void fs_hal_check_power(void)
 {
 }
 

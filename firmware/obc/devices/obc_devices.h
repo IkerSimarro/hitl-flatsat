@@ -115,7 +115,10 @@ uint32_t dev_gps_crc_errors(void);
 
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 
+#define DEV_RW_MAX_TORQUE 0.001 /* N m (42 SC_NOS3.txt) */
+
 int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms);
+/* torque on the wheel (the body feels the opposite), up to DEV_RW_MAX_TORQUE */
 int dev_rw_set_torque(uint8_t wheel, double torque_nm);
 
 /* ---- EPS (generic_eps, I2C) ---- */

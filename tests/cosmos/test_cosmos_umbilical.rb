@@ -14,7 +14,14 @@ rescue StandardError => e
   puts "FAIL #{name}: #{e.message.lines.first.strip}"
 end
 
-step('telemetry arriving (OBC_HK in SAFE mode)') { wait_check("FLATSAT OBC_HK MODE == 'SAFE'", 90) }
+step('telemetry arriving (OBC_HK)') { wait_check('FLATSAT OBC_HK UPTIME > 0', 90) }
+
+# NOS3's 2.8 deg/s deployment tip-off starts automatic detumbling; this test is about commanding, so it turns
+# automatic mode transitions off (tests/system/test_adcs.py covers them)
+step('automatic mode transitions off') do
+  cmd("FLATSAT OBC_SET_AUTO_MODES with STATE 'OFF'")
+  wait_check('FLATSAT ADCS_STATE AUTO_MODES == 0', 5)
+end
 
 step('all six sensors valid') { wait_check('FLATSAT ADCS_SENSORS VALID_MASK == 63', 30) }
 

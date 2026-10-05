@@ -5,6 +5,8 @@
 **   --umb-pty LINK   create a pty pair and symlink the far end to LINK for the HIL bridge to open
 **   --umb-dev PATH   open an existing serial device for the umbilical instead
 **   --can IFACE      SocketCAN interface for the FlatSat bus (default vcan0, "none" to disable)
+**   --run-line adcs  this node's reset line in the SIL harness (sil_harness.h): while the EPS node holds
+**                    it low the node is "in reset" (fs_hal_check_power)
 **
 ** fs_hal_reboot() re-executes the node with the same arguments, passing the reset cause in the
 ** environment, so reboot handling behaves as it will on the Pico.
@@ -31,6 +33,7 @@
 #include <linux/can/raw.h>
 
 #include "flatsat_icd.h"
+#include "sil_harness.h"
 
 #define RESET_CAUSE_ENV "FS_RESET_CAUSE"
 
@@ -39,6 +42,7 @@ static int    umb_peer = -1; /* far end of our pty, kept open so the pty survive
 static int    can_fd   = -1;
 static char **saved_argv;
 static uint64_t start_ns;
+static volatile uint8_t *run_line; /* harness line holding this node in reset, or NULL */
 
 static uint64_t mono_ns(void)
 {
@@ -149,6 +153,7 @@ int fs_hal_init(int argc, char **argv)
     const char *umb_pty = find_option(argc, argv, "--umb-pty");
     const char *umb_dev = find_option(argc, argv, "--umb-dev");
     const char *can     = find_option(argc, argv, "--can");
+    const char *runl    = find_option(argc, argv, "--run-line");
     int         rc      = 0;
 
     setvbuf(stdout, NULL, _IOLBF, 0);
@@ -162,6 +167,20 @@ int fs_hal_init(int argc, char **argv)
     else if (umb_dev != NULL)
     {
         rc |= open_umb_dev(umb_dev);
+    }
+
+    if (runl != NULL)
+    {
+        sil_harness_t *h = sil_harness();
+        if (h != NULL && strcmp(runl, "adcs") == 0)
+        {
+            run_line = &h->adcs_run;
+        }
+        else
+        {
+            fs_hal_log("unknown --run-line %s", runl);
+            rc = -1;
+        }
     }
 
     if (can == NULL)
@@ -293,12 +312,11 @@ uint8_t fs_hal_reset_cause(void)
     return cause != NULL ? (uint8_t)atoi(cause) : FLATSAT_RESET_CAUSE_POWER_ON;
 }
 
-void fs_hal_reboot(void)
+static void reboot_with_cause(uint8_t reset_cause)
 {
     char cause[8];
 
-    fs_hal_log("rebooting");
-    snprintf(cause, sizeof(cause), "%d", FLATSAT_RESET_CAUSE_COMMAND);
+    snprintf(cause, sizeof(cause), "%d", reset_cause);
     setenv(RESET_CAUSE_ENV, cause, 1);
     if (umb_fd >= 0)
     {
@@ -315,6 +333,33 @@ void fs_hal_reboot(void)
     execv("/proc/self/exe", saved_argv);
     fs_hal_log("reboot failed: %s", strerror(errno));
     exit(1);
+}
+
+void fs_hal_reboot(void)
+{
+    fs_hal_log("rebooting");
+    reboot_with_cause(FLATSAT_RESET_CAUSE_COMMAND);
+}
+
+void fs_hal_check_power(void)
+{
+    if (run_line == NULL || *run_line)
+    {
+        return;
+    }
+    /* Held in reset: a real chip does nothing at all, so neither do we, CAN included */
+    fs_hal_log("held in reset by the RUN line");
+    if (can_fd >= 0)
+    {
+        close(can_fd);
+        can_fd = -1;
+    }
+    while (!*run_line)
+    {
+        fs_hal_sleep_us(20000);
+    }
+    fs_hal_log("RUN line released: power-on reset");
+    reboot_with_cause(FLATSAT_RESET_CAUSE_POWER_ON);
 }
 
 void fs_hal_watchdog_kick(void)

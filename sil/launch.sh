@@ -59,11 +59,11 @@ docker run -d --rm --init --name "$COSMOS_NAME" --network "$NET" --network-alias
     ballaerospace/cosmos:4.5.0 $COSMOS_CMD > /dev/null || fail "could not start COSMOS"
 echo "[launch] COSMOS started$([ $HEADLESS = 0 ] && echo ": open 'Command and Telemetry Server', then Packet Viewer > FLATSAT")"
 
-# ---- Space segment: NOS3 simulators, 42, the HIL bridge and the OBC ----
+# ---- Space segment: NOS3 simulators, 42, the HIL bridge, the OBC and the ADCS and EPS nodes on CAN ----
 export SIL_LOG_DIR=$ROOT/sil/logs/launch-$(date +%Y%m%d-%H%M%S)
 echo "[launch] logs in $SIL_LOG_DIR"
 # Runs as a background job so Ctrl-C reaches this script's trap straight away (bash defers traps
 # while a foreground child runs); the trap removes the containers, which ends the job.
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_GRAPHICS=$((1 - HEADLESS)) SIL_DOCKER_ARGS="$X11_ARGS" SIL_TTY=0 \
-    "$ROOT/sil/sil.sh" 'firmware/build/obc --umb-pty $SIL_UMB_PTY --can none 2>&1 | tee $SIL_LOG_DIR/obc.log' &
+    "$ROOT/sil/sil.sh" 'sil/start_nodes.sh && firmware/build/obc --umb-pty $SIL_UMB_PTY 2>&1 | tee $SIL_LOG_DIR/obc.log' &
 wait $!

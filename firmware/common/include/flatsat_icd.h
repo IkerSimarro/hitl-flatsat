@@ -36,6 +36,7 @@ typedef enum
     FLATSAT_MODE_REASON_AUTO_CONVERGED = 4,
     FLATSAT_MODE_REASON_LOW_BATTERY = 5,
     FLATSAT_MODE_REASON_NODE_LOST = 6,
+    FLATSAT_MODE_REASON_BATTERY_RECOVERED = 7,
 } flatsat_mode_reason_t;
 
 typedef enum
@@ -180,15 +181,16 @@ typedef struct __attribute__((packed))
     uint8_t adcs_mode; /* (flatsat_adcs_mode_t) */
     uint8_t sun_valid;
     uint8_t converged;
-    uint8_t spare;
+    uint8_t phys_rw_status; /* Physical wheel RW_TLM status: bit 0 driver enabled, 1 at set point, 2 saturated, 3 command timeout, 4 safe */
     float rate_est[3]; /* rad/s */
     float mag_body[3]; /* T */
     float sun_body[3]; /* Unit vector */
-    float pointing_error; /* rad */
-    float rw_cmd_speed[3]; /* rad/s */
+    float pointing_error; /* rad Angle between the +X axis and the Sun; -1 without a Sun vector */
+    float rw_cmd_torque[3]; /* N m Torque commanded to the simulated wheels */
     float rw_sim_speed[3]; /* rad/s */
     int16_t trq_duty[3]; /* 0.01 % */
-    int16_t spare2;
+    uint8_t auto_modes; /* 1 = automatic mode transitions enabled (OBC_SET_AUTO_MODES) */
+    uint8_t spare2;
     float phys_rw_cmd_speed; /* rad/s */
     float phys_rw_meas_speed; /* rad/s */
 } flatsat_adcs_state_t;
@@ -356,6 +358,14 @@ typedef struct __attribute__((packed))
 } flatsat_obc_reboot_t;
 _Static_assert(sizeof(flatsat_obc_reboot_t) == 4, "OBC_REBOOT layout");
 
+#define FLATSAT_OBC_SET_AUTO_MODES_FC 9
+#define FLATSAT_OBC_SET_AUTO_MODES_LEN 9
+typedef struct __attribute__((packed))
+{
+    uint8_t state; /* (flatsat_switch_state_t) */
+} flatsat_obc_set_auto_modes_t;
+_Static_assert(sizeof(flatsat_obc_set_auto_modes_t) == 1, "OBC_SET_AUTO_MODES layout");
+
 #define FLATSAT_ADCS_NOOP_FC 0
 #define FLATSAT_ADCS_NOOP_LEN 8
 
@@ -363,7 +373,7 @@ _Static_assert(sizeof(flatsat_obc_reboot_t) == 4, "OBC_REBOOT layout");
 #define FLATSAT_ADCS_SET_BDOT_GAIN_LEN 12
 typedef struct __attribute__((packed))
 {
-    float gain;
+    float gain; /* A m2 s m = -gain dB/dt / |B|; 0 < gain <= 10000 */
 } flatsat_adcs_set_bdot_gain_t;
 _Static_assert(sizeof(flatsat_adcs_set_bdot_gain_t) == 4, "ADCS_SET_BDOT_GAIN layout");
 
@@ -371,8 +381,8 @@ _Static_assert(sizeof(flatsat_adcs_set_bdot_gain_t) == 4, "ADCS_SET_BDOT_GAIN la
 #define FLATSAT_ADCS_SET_SUN_GAINS_LEN 16
 typedef struct __attribute__((packed))
 {
-    float kp;
-    float kd;
+    float kp; /* 1/s2 wn^2, inertia-normalised */
+    float kd; /* 1/s 2 zeta wn */
 } flatsat_adcs_set_sun_gains_t;
 _Static_assert(sizeof(flatsat_adcs_set_sun_gains_t) == 8, "ADCS_SET_SUN_GAINS layout");
 
@@ -396,6 +406,16 @@ typedef struct __attribute__((packed))
     int16_t duty; /* 0.01 % */
 } flatsat_adcs_trq_manual_t;
 _Static_assert(sizeof(flatsat_adcs_trq_manual_t) == 4, "ADCS_TRQ_MANUAL layout");
+
+#define FLATSAT_ADCS_PHYS_WHEEL_TEST_FC 5
+#define FLATSAT_ADCS_PHYS_WHEEL_TEST_LEN 12
+typedef struct __attribute__((packed))
+{
+    uint8_t ctrl_mode; /* (flatsat_rw_ctrl_mode_t) */
+    uint8_t spare;
+    int16_t setpoint; /* rpm (SPEED) or 0.01 % (DUTY) */
+} flatsat_adcs_phys_wheel_test_t;
+_Static_assert(sizeof(flatsat_adcs_phys_wheel_test_t) == 4, "ADCS_PHYS_WHEEL_TEST layout");
 
 #define FLATSAT_EPS_NOOP_FC 0
 #define FLATSAT_EPS_NOOP_LEN 8
@@ -613,11 +633,13 @@ _Static_assert(sizeof(flatsat_can_node_ack_t) == 2, "CAN NODE_ACK layout");
     X(OBC_DOWNLINK_PACKET, 0x1A00, 6, 10) \
     X(OBC_NODE_RESET, 0x1A00, 7, 9) \
     X(OBC_REBOOT, 0x1A00, 8, 12) \
+    X(OBC_SET_AUTO_MODES, 0x1A00, 9, 9) \
     X(ADCS_NOOP, 0x1A10, 0, 8) \
     X(ADCS_SET_BDOT_GAIN, 0x1A10, 1, 12) \
     X(ADCS_SET_SUN_GAINS, 0x1A10, 2, 16) \
     X(ADCS_RW_MANUAL, 0x1A10, 3, 16) \
     X(ADCS_TRQ_MANUAL, 0x1A10, 4, 12) \
+    X(ADCS_PHYS_WHEEL_TEST, 0x1A10, 5, 12) \
     X(EPS_NOOP, 0x1A20, 0, 8) \
     X(EPS_SWITCH, 0x1A20, 1, 10) \
     X(EPS_SIM_SWITCH, 0x1A20, 2, 10) \

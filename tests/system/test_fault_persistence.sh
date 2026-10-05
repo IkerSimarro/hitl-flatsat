@@ -2,7 +2,7 @@
 #
 # Fault injection: disables the IMU simulator through NOS3's command bus, briefly and then for longer
 # (it stays connected to 42 but stops answering as a device), and checks the OBC
-# counts isolated missed reads without declaring a fault, but declares one after 3 consecutive misses
+# counts isolated missed reads without declaring a fault, but declares one after about 2.5 s of misses
 # and reports the recovery (NCR-005), and that the freeze affects only the IMU: the bridge's per-bus
 # workers keep every other device and the umbilical link running (NCR-006). Runs inside the SIL
 # environment:
@@ -13,7 +13,8 @@ set -u
 ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/../.." &> /dev/null && pwd )
 OBC_LOG=$SIL_LOG_DIR/obc.log
 
-"$ROOT/firmware/build/obc" --umb-pty "$SIL_UMB_PTY" --can none > "$OBC_LOG" 2>&1 &
+"$ROOT/sil/start_nodes.sh" > /dev/null || exit 1
+"$ROOT/firmware/build/obc" --umb-pty "$SIL_UMB_PTY" > "$OBC_LOG" 2>&1 &
 OBC=$!
 trap 'kill $OBC 2> /dev/null' EXIT
 
@@ -49,17 +50,20 @@ check()
     if [ "$1" = "1" ]; then echo "PASS $2"; PASS=$((PASS + 1)); else echo "FAIL $2"; FAIL=$((FAIL + 1)); fi
 }
 
-sleep 8 # link up, buses opened, a few clean acquisition cycles
+sleep 2 # umbilical link up
+# NOS3's 2.8 deg/s deployment tip-off would start automatic detumbling; this test needs a quiet spacecraft
+python3 "$ROOT/sil/obc_cmd.py" OBC_SET_AUTO_MODES STATE=0
+sleep 6 # buses opened, a few clean acquisition cycles
 m0=$(misses)
 check "$([ "$m0" = "0" ] && echo 1)" "no misses in normal operation (SENSOR_MISSES $m0)"
 
-# Short outage: one or two IMU reads missed (at 1 Hz), nothing else, no fault event
+# Short outage: about 7 IMU reads missed (the ADCS reads it at 5 Hz), nothing else, no fault event
 imu DISABLE; sleep 1.5; imu ENABLE; sleep 3
 m1=$(misses)
-check "$([ "$(faults)" = "0" ] && [ "$m1" -ge 1 ] && [ "$m1" -le 3 ] && echo 1)" \
-    "1.5 s outage: $m1 IMU reads missed (expected 1-3), no fault declared ($(faults) fault events)"
+check "$([ "$(faults)" = "0" ] && [ "$m1" -ge 5 ] && [ "$m1" -le 10 ] && echo 1)" \
+    "1.5 s outage: $m1 IMU reads missed (expected 5-10), no fault declared ($(faults) fault events)"
 
-# Long outage: the IMU is declared failed after 3 consecutive misses and recovers afterwards
+# Long outage: the IMU is declared failed after 12 consecutive misses (2.4 s) and recovers afterwards
 imu DISABLE; sleep 6; imu ENABLE; sleep 4
 m2=$(misses)
 check "$([ "$(faults)" = "1" ] && [ "$(recoveries)" = "1" ] && echo 1)" \

@@ -60,6 +60,16 @@ static void task_sensors(void)
     obc_sensors_acquire();
 }
 
+static void task_adcs(void)
+{
+    obc_adcs_step();
+}
+
+static void task_adcs_auto(void)
+{
+    obc_adcs_auto();
+}
+
 static void task_gps(void)
 {
     obc_sensors_poll_gps();
@@ -70,12 +80,26 @@ static void task_telemetry(void)
     obc_tlm_service();
 }
 
+static void task_can_fast(void)
+{
+    obc_can_task_fast();
+}
+
+static void task_can_slow(void)
+{
+    obc_can_task_slow();
+}
+
 static fs_task_t tasks[] = {
     {.name = "commands", .period_ms = 50, .offset_ms = 0, .fn = task_commands},
     {.name = "heartbeat", .period_ms = 250, .offset_ms = 10, .fn = task_heartbeat},
     {.name = "gps", .period_ms = 100, .offset_ms = 20, .fn = task_gps},
     {.name = "sensors", .period_ms = 1000, .offset_ms = 100, .fn = task_sensors},
     {.name = "telemetry", .period_ms = 50, .offset_ms = 30, .fn = task_telemetry},
+    {.name = "can_fast", .period_ms = 100, .offset_ms = 40, .fn = task_can_fast},
+    {.name = "can_slow", .period_ms = 1000, .offset_ms = 60, .fn = task_can_slow},
+    {.name = "adcs", .period_ms = 200, .offset_ms = 70, .fn = task_adcs},
+    {.name = "adcs_auto", .period_ms = 1000, .offset_ms = 180, .fn = task_adcs_auto},
 };
 
 int main(int argc, char **argv)
@@ -91,7 +115,6 @@ int main(int argc, char **argv)
 
     memset(&obc, 0, sizeof(obc));
     obc.reset_cause = fs_hal_reset_cause();
-    obc.bdot_gain   = 0.0f;
 
     fs_time_init(epoch);
     fs_umb_init(&handlers);
@@ -99,6 +122,8 @@ int main(int argc, char **argv)
     obc_cmd_init();
     obc_tlm_init();
     obc_sensors_init();
+    obc_adcs_init();
+    obc_can_init();
     fs_sched_init(tasks, sizeof(tasks) / sizeof(tasks[0]));
 
     fs_hal_log("OBC flight software started, ICD %s, reset cause %u", FLATSAT_ICD_VERSION, obc.reset_cause);
@@ -108,6 +133,7 @@ int main(int argc, char **argv)
         uint32_t wait_us;
 
         fs_umb_poll();
+        obc_can_poll();
         wait_us = fs_sched_run();
         fs_hal_sleep_us(wait_us < MAX_IDLE_US ? wait_us : MAX_IDLE_US);
     }

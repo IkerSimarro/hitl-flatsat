@@ -17,7 +17,8 @@ enums:
     values: {SAFE: 0, DETUMBLE: 1, SUN_POINT: 2, LOW_POWER: 3, TEST: 4}
   mode_reason:
     desc: "Why the last mode change happened"
-    values: {BOOT: 0, COMMAND: 1, FAULT: 2, AUTO_RATES_HIGH: 3, AUTO_CONVERGED: 4, LOW_BATTERY: 5, NODE_LOST: 6}
+    values: {BOOT: 0, COMMAND: 1, FAULT: 2, AUTO_RATES_HIGH: 3, AUTO_CONVERGED: 4, LOW_BATTERY: 5, NODE_LOST: 6,
+             BATTERY_RECOVERED: 7}
   reset_cause:
     values: {POWER_ON: 0, WATCHDOG: 1, COMMAND: 2, UNKNOWN: 3}
   severity:
@@ -98,15 +99,16 @@ telemetry:
       - {name: ADCS_MODE, type: u8, enum: adcs_mode}
       - {name: SUN_VALID, type: u8}
       - {name: CONVERGED, type: u8}
-      - {name: SPARE, type: u8}
+      - {name: PHYS_RW_STATUS, type: u8, desc: "Physical wheel RW_TLM status: bit 0 driver enabled, 1 at set point, 2 saturated, 3 command timeout, 4 safe"}
       - {name: RATE_EST, type: f32, count: 3, units: rad/s}
       - {name: MAG_BODY, type: f32, count: 3, units: T}
       - {name: SUN_BODY, type: f32, count: 3, desc: "Unit vector"}
-      - {name: POINTING_ERROR, type: f32, units: rad}
-      - {name: RW_CMD_SPEED, type: f32, count: 3, units: rad/s}
+      - {name: POINTING_ERROR, type: f32, units: rad, desc: "Angle between the +X axis and the Sun; -1 without a Sun vector"}
+      - {name: RW_CMD_TORQUE, type: f32, count: 3, units: N m, desc: "Torque commanded to the simulated wheels"}
       - {name: RW_SIM_SPEED, type: f32, count: 3, units: rad/s}
       - {name: TRQ_DUTY, type: i16, count: 3, units: "0.01 %"}
-      - {name: SPARE2, type: i16}
+      - {name: AUTO_MODES, type: u8, desc: "1 = automatic mode transitions enabled (OBC_SET_AUTO_MODES)"}
+      - {name: SPARE2, type: u8}
       - {name: PHYS_RW_CMD_SPEED, type: f32, units: rad/s}
       - {name: PHYS_RW_MEAS_SPEED, type: f32, units: rad/s}
 
@@ -214,6 +216,9 @@ commands:
       - name: REBOOT
         fc: 8
         fields: [{name: MAGIC, type: u32, desc: "Must be 0x0B0075ED"}]
+      - name: SET_AUTO_MODES
+        fc: 9
+        fields: [{name: STATE, type: u8, enum: switch_state}]
 
   - mid: 0x1A10
     prefix: ADCS
@@ -221,16 +226,20 @@ commands:
       - {name: NOOP, fc: 0}
       - name: SET_BDOT_GAIN
         fc: 1
-        fields: [{name: GAIN, type: f32}]
+        fields: [{name: GAIN, type: f32, units: A m2 s, desc: "m = -gain dB/dt / |B|; 0 < gain <= 10000"}]
       - name: SET_SUN_GAINS
         fc: 2
-        fields: [{name: KP, type: f32}, {name: KD, type: f32}]
+        fields: [{name: KP, type: f32, units: 1/s2, desc: "wn^2, inertia-normalised"}, {name: KD, type: f32, units: 1/s, desc: "2 zeta wn"}]
       - name: RW_MANUAL
         fc: 3
         fields: [{name: WHEEL, type: u8}, {name: SPARE, type: u8}, {name: SPARE2, type: u16}, {name: SPEED, type: f32, units: rad/s}]
       - name: TRQ_MANUAL
         fc: 4
         fields: [{name: TORQUER, type: u8}, {name: SPARE, type: u8}, {name: DUTY, type: i16, units: "0.01 %"}]
+      - name: PHYS_WHEEL_TEST
+        fc: 5
+        desc: "TEST mode only: drive the physical wheel directly instead of mirroring simulated wheel 0"
+        fields: [{name: CTRL_MODE, type: u8, enum: rw_ctrl_mode}, {name: SPARE, type: u8}, {name: SETPOINT, type: i16, desc: "rpm (SPEED) or 0.01 % (DUTY)"}]
 
   - mid: 0x1A20
     prefix: EPS

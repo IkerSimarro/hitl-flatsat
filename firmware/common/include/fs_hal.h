@@ -59,6 +59,13 @@ void fs_hal_can_error_counters(uint8_t *tec, uint8_t *rec);
 /* flatsat_reset_cause_t value for the most recent reset */
 uint8_t fs_hal_reset_cause(void);
 void    fs_hal_reboot(void);
+
+/*
+** Returns at once unless this node's reset line is held (e.g. the EPS node holding the ADCS node's RUN pin
+** low); then it waits for the line to be released and restarts the node with a power-on reset cause, so
+** it doesn't return. On the Pico the line resets the chip itself, so this is a no-op there.
+*/
+void    fs_hal_check_power(void);
 void    fs_hal_watchdog_kick(void);
 
 /* Debug log line: stdout on Linux, the umbilical LOG frame or a UART on the Pico */

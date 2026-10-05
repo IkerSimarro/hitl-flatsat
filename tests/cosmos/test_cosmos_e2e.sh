@@ -27,9 +27,10 @@ docker run -d --rm --name "$COSMOS_NAME" --network "$NET" --network-alias flatsa
     -v "$ROOT:$ROOT" -w "$COSMOS_DIR" -e PROCESSOR_ENDIANNESS=LITTLE_ENDIAN \
     ballaerospace/cosmos:4.5.0 ruby tools/CmdTlmServer --no-gui > /dev/null
 
-# SIL environment with the OBC, reachable as nos-fsw
+# SIL environment with the OBC and the CAN nodes, reachable as nos-fsw
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_DETACH=1 "$ROOT/sil/sil.sh" \
-    'firmware/build/obc --umb-pty $SIL_UMB_PTY --can none > $SIL_LOG_DIR/obc.log 2>&1 & sleep 600' > /dev/null
+    'sil/start_nodes.sh && { firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 & sleep 600; }' \
+    > /dev/null
 
 echo "[e2e] waiting for the simulation..."
 for _ in $(seq 120); do

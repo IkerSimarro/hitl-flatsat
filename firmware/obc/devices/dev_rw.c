@@ -2,7 +2,9 @@
 ** Reaction wheel driver (generic_reaction_wheel over UART, ASCII)
 **
 **   "CURRENT_MOMENTUM"        -> "CURRENT_MOMENTUM=<Nms>"
-**   "SET_TORQUE=<%10.4f Nm>"  -> "SET_TORQUE=<Nm>"
+**   "SET_TORQUE=<%.6e Nm>"    -> "SET_TORQUE=<Nm>"
+** NOS3's cFS driver formats the torque as %10.4f: 0.1 mN m steps on a 1 mN m wheel, which rounds fine-pointing
+** torques to zero. The simulator parses any floating-point format.
 ** Replies have no terminator, so a reply is complete when the line goes quiet. NOS3's cFS driver reads
 ** immediately after writing, which only works on a zero-latency simulated bus.
 */
@@ -59,7 +61,11 @@ int dev_rw_set_torque(uint8_t wheel, double torque_nm)
     char reply[RW_REPLY_MAX];
     int  rc;
 
-    snprintf(req, sizeof(req), "SET_TORQUE=%10.4f", torque_nm);
+    if (!(torque_nm >= -DEV_RW_MAX_TORQUE && torque_nm <= DEV_RW_MAX_TORQUE)) /* also rejects NaN */
+    {
+        return DEV_ERR_ARG;
+    }
+    snprintf(req, sizeof(req), "SET_TORQUE=%.6e", torque_nm);
     rc = request(wheel, req, reply);
     if (rc != DEV_OK)
     {

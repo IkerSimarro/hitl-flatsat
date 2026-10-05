@@ -7,7 +7,7 @@ ICD data version 1.0. Offsets are from the start of the packet (telemetry and co
 ## Enumerations
 
 - **mode**: `SAFE` = 0, `DETUMBLE` = 1, `SUN_POINT` = 2, `LOW_POWER` = 3, `TEST` = 4
-- **mode_reason**: `BOOT` = 0, `COMMAND` = 1, `FAULT` = 2, `AUTO_RATES_HIGH` = 3, `AUTO_CONVERGED` = 4, `LOW_BATTERY` = 5, `NODE_LOST` = 6
+- **mode_reason**: `BOOT` = 0, `COMMAND` = 1, `FAULT` = 2, `AUTO_RATES_HIGH` = 3, `AUTO_CONVERGED` = 4, `LOW_BATTERY` = 5, `NODE_LOST` = 6, `BATTERY_RECOVERED` = 7
 - **reset_cause**: `POWER_ON` = 0, `WATCHDOG` = 1, `COMMAND` = 2, `UNKNOWN` = 3
 - **severity**: `DEBUG` = 0, `INFO` = 1, `WARNING` = 2, `ERROR` = 3, `CRITICAL` = 4
 - **time_source**: `FREE_RUNNING` = 0, `UMBILICAL` = 1
@@ -86,15 +86,16 @@ ADCS estimates and actuator commands
 | 16 | 1 | `ADCS_MODE` | u8 |  | Enum `adcs_mode`. |
 | 17 | 1 | `SUN_VALID` | u8 |  |  |
 | 18 | 1 | `CONVERGED` | u8 |  |  |
-| 19 | 1 | `SPARE` | u8 |  |  |
+| 19 | 1 | `PHYS_RW_STATUS` | u8 |  | Physical wheel RW_TLM status: bit 0 driver enabled, 1 at set point, 2 saturated, 3 command timeout, 4 safe |
 | 20 | 12 | `RATE_EST` | f32[3] | rad/s |  |
 | 32 | 12 | `MAG_BODY` | f32[3] | T |  |
 | 44 | 12 | `SUN_BODY` | f32[3] |  | Unit vector |
-| 56 | 4 | `POINTING_ERROR` | f32 | rad |  |
-| 60 | 12 | `RW_CMD_SPEED` | f32[3] | rad/s |  |
+| 56 | 4 | `POINTING_ERROR` | f32 | rad | Angle between the +X axis and the Sun; -1 without a Sun vector |
+| 60 | 12 | `RW_CMD_TORQUE` | f32[3] | N m | Torque commanded to the simulated wheels |
 | 72 | 12 | `RW_SIM_SPEED` | f32[3] | rad/s |  |
 | 84 | 6 | `TRQ_DUTY` | i16[3] | 0.01 % |  |
-| 90 | 2 | `SPARE2` | i16 |  |  |
+| 90 | 1 | `AUTO_MODES` | u8 |  | 1 = automatic mode transitions enabled (OBC_SET_AUTO_MODES) |
+| 91 | 1 | `SPARE2` | u8 |  |  |
 | 92 | 4 | `PHYS_RW_CMD_SPEED` | f32 | rad/s |  |
 | 96 | 4 | `PHYS_RW_MEAS_SPEED` | f32 | rad/s |  |
 
@@ -238,6 +239,12 @@ No arguments.
 |---|---|---|---|---|---|
 | 8 | 4 | `MAGIC` | u32 |  | Must be 0x0B0075ED |
 
+### `OBC_SET_AUTO_MODES` — MID `0x1A00`, FC 9, 9 bytes
+
+| Offset | Size | Field | Type | Units | Description |
+|---|---|---|---|---|---|
+| 8 | 1 | `STATE` | u8 |  | Enum `switch_state`. |
+
 ### `ADCS_NOOP` — MID `0x1A10`, FC 0, 8 bytes
 
 No arguments.
@@ -246,14 +253,14 @@ No arguments.
 
 | Offset | Size | Field | Type | Units | Description |
 |---|---|---|---|---|---|
-| 8 | 4 | `GAIN` | f32 |  |  |
+| 8 | 4 | `GAIN` | f32 | A m2 s | m = -gain dB/dt / |B|; 0 < gain <= 10000 |
 
 ### `ADCS_SET_SUN_GAINS` — MID `0x1A10`, FC 2, 16 bytes
 
 | Offset | Size | Field | Type | Units | Description |
 |---|---|---|---|---|---|
-| 8 | 4 | `KP` | f32 |  |  |
-| 12 | 4 | `KD` | f32 |  |  |
+| 8 | 4 | `KP` | f32 | 1/s2 | wn^2, inertia-normalised |
+| 12 | 4 | `KD` | f32 | 1/s | 2 zeta wn |
 
 ### `ADCS_RW_MANUAL` — MID `0x1A10`, FC 3, 16 bytes
 
@@ -271,6 +278,14 @@ No arguments.
 | 8 | 1 | `TORQUER` | u8 |  |  |
 | 9 | 1 | `SPARE` | u8 |  |  |
 | 10 | 2 | `DUTY` | i16 | 0.01 % |  |
+
+### `ADCS_PHYS_WHEEL_TEST` — MID `0x1A10`, FC 5, 12 bytes
+
+| Offset | Size | Field | Type | Units | Description |
+|---|---|---|---|---|---|
+| 8 | 1 | `CTRL_MODE` | u8 |  | Enum `rw_ctrl_mode`. |
+| 9 | 1 | `SPARE` | u8 |  |  |
+| 10 | 2 | `SETPOINT` | i16 |  | rpm (SPEED) or 0.01 % (DUTY) |
 
 ### `EPS_NOOP` — MID `0x1A20`, FC 0, 8 bytes
 

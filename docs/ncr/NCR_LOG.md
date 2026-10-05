@@ -11,6 +11,9 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-005](#ncr-005) | 2026-10-02 | Isolated late replies raise sensor fault events | Minor | Closed |
 | [NCR-006](#ncr-006) | 2026-10-02 | One stalled simulator blocks the bridge for every device | Major | Closed |
 | [NCR-007](#ncr-007) | 2026-10-02 | COSMOS Launcher crashes after the legal agreement | Major | Closed |
+| [NCR-008](#ncr-008) | 2026-10-04 | OBC misses a node reboot in the node's first second | Minor | Closed |
+| [NCR-009](#ncr-009) | 2026-10-05 | B-dot detumble stalls above the hand-over rate in the loop with 42 | Major | Closed |
+| [NCR-010](#ncr-010) | 2026-10-05 | 42 applies corrupted wheel torque commands | Critical | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -179,3 +182,92 @@ Severity: **Critical** invalidates results or risks hardware; **Major** a functi
 **Verification.**
 - `Process.setpgrp` in the COSMOS image fails with EPERM without `--init` and succeeds with it.
 - The operator then accepted the agreement and used the NOS3 Launcher, Command Sender (`FLATSAT OBC_NOOP`) and Packet Viewer (`FLATSAT OBC_HK`) against the running simulation.
+
+---
+
+## NCR-008
+
+**OBC misses a node reboot in the node's first second**
+
+| | |
+|---|---|
+| Found by | SIL CAN node system test (`tests/system/test_can_nodes.py`), commanded node reset check |
+| Item | OBC flight software `firmware/obc/obc_can.c`, heartbeat monitor |
+| Severity | Minor: the reset itself worked and was acknowledged, but the operator got no "rebooted" event, so an unexpected reset of a node could go unreported |
+| Status | Closed 2026-10-04 |
+
+**Observation.** `OBC_NODE_RESET ADCS` was acknowledged and the ADCS node restarted with reset cause COMMAND (node log), but the OBC raised no `node rebooted` event. The previous check in the test had power-cycled the ADCS node, so it had been running for under a second when the reset came.
+
+**Root cause.** The OBC detected a reboot only when a heartbeat's uptime (whole seconds) was lower than the previous one. Both heartbeats around the reset said uptime 0: the last one before the reset was sent at power-on, and a node sends its first heartbeat straight after start-up. The heartbeat (8 bytes, a full CAN frame) has no room for a boot counter.
+
+**Fix.** A node sends heartbeats at 1 s intervals, so while it keeps running every heartbeat reports a higher uptime than the one before. The OBC now also reports a reboot when the uptime is unchanged and more than 0.5 s has passed since the previous heartbeat. A CAN frame received twice (possible after an error in its last bit) arrives straight away and isn't mistaken for a reboot.
+
+**Verification.** `test_can_nodes.py` 10/10: the commanded reset 1 s after a power-on reset is reported as `ADCS node rebooted (reset cause 2)`.
+
+---
+
+## NCR-009
+
+**B-dot detumble stalls above the hand-over rate in the loop with 42**
+
+| | |
+|---|---|
+| Found by | SIL ADCS system test (`tests/system/test_adcs.py`), first run in the loop with 42 |
+| Item | ADCS design: B-dot gain and the `DETUMBLE` → `SUN_POINT` threshold (`firmware/obc/adcs/adcs_params.h`, [ADCS design note](../design/ADCS_DESIGN.md) §4.1) |
+| Severity | Major: from a 5.4°/s tumble the spacecraft never reached sun pointing, so the automatic mode sequence didn't meet its requirement |
+| Status | Closed 2026-10-05 |
+
+**Observation.** The OBC entered `DETUMBLE` on its own 13 s after start and B-dot ran with saturated torquers. According to 42's output, the angular momentum fell from 2.9 to 1.2 mN m s in 50 s. The body rate then stayed at about 1.65°/s for over 7 minutes, with dipoles down to about 0.05 A m², and never reached the 1°/s needed to hand over to sun pointing.
+
+**Investigation.**
+- The magnetometer was checked against 42's truth with the spacecraft tumbling: within 0.8°. The sim log showed fresh samples every 0.2 s.
+- In the body frame the field was changing by only about 0.1°/s while the body turned at 1.6°/s, so the spin lay almost exactly along the field line.
+- A magnetic torque is always perpendicular to the field, so B-dot can't act on that spin. It decays only as the field direction turns. The closed-loop unit test had shown the same behaviour, but at a lower level.
+
+**Root cause.** Two things combined.
+1. The gain (200 A m² s, taken from NOS3's ADCS configuration) was about ten times too high. A high gain cancels the off-field rate so quickly that the spin is steered to follow the field line instead of being removed. A gain scan over three tumbles in the unit simulation found k = 20 consistently fast: below 1°/s within 90 s in every case, where k = 200 took between 40 and 710 s.
+2. Even at the right gain, the real field near the magnetic equator turns slowly enough that B-dot can hold a spin above 1°/s for minutes. The hand-over rate assumed B-dot would finish the job.
+
+**Fix.**
+- B-dot gain 20 A m² s.
+- The `DETUMBLE` → `SUN_POINT` hand-over moved to 2°/s (11 % of one wheel's capacity). The wheels absorb the residual spin and momentum management dumps it over the orbit.
+- For hysteresis, the `SAFE` → `DETUMBLE` threshold moved to 2.5°/s (still below NOS3's 2.8°/s deployment tip-off) and `SUN_POINT` → `DETUMBLE` to 5°/s.
+- The unit test now detumbles from three different tumbles, so a gain that suits only one of them fails.
+
+**Verification.**
+- `test_adcs` 28/28.
+- In the loop with 42: `DETUMBLE` from 5.39°/s, then `SUN_POINT` automatically after 100 s at 1.62°/s (42 truth), then sun pointing converged.
+
+---
+
+## NCR-010
+
+**42 applies corrupted wheel torque commands**
+
+| | |
+|---|---|
+| Found by | SIL ADCS system test (`tests/system/test_adcs.py`) and its recorded time series; isolated with a dedicated wheel experiment |
+| Item | Test environment: 42's IPC socket reader, `Source/AutoCode/TxRxIPC.c` `ReadFromSocket()` and its generator `MetaCode/JsonToTxRxIPC.jl` (NOS3's 42, branch `dev_20260403`) |
+| Severity | Critical: 42 applied wheel torques the flight software never commanded, so every result involving the wheels was suspect |
+| Status | Closed 2026-10-05 |
+
+**Observation.** In the ADCS test, the spacecraft was pointing at the Sun with the body rate at 0.03°/s, and the IMU simulator was then disabled. Within a second the true body rate jumped to 1.77°/s. In the same moment all three simulated wheels lost 2.0·10⁻⁴ N m s, which is full torque (1 mN m) for exactly one 0.2 s control period. The OBC had commanded zero torque. The wheel simulator logs confirmed that nothing above 0.06 mN m was ever sent.
+
+A dedicated experiment (TEST mode, one wheel held at 50 rad/s by the OBC's manual speed loop) showed a second symptom. The wheel stopped accelerating at 45.2 rad/s and stayed there, while the OBC kept commanding +82 µN m and the simulator kept forwarding it.
+
+**Root cause.** 42's `ReadFromSocket()` reads one chunk into a 16 KB stack buffer that it never clears or terminates. It then parses newline-delimited lines until it meets a line `[ENDMSG]`, ignoring how many bytes were actually read.
+
+NOS3's simulators never send `[ENDMSG]`, and the wheel simulator doesn't even end its command with a newline: `SC[0].Whl[0].Tcmd = 8.2e-05`. The parser therefore ran on into whatever an earlier, longer message had left in the buffer, and attached its trailing characters to the new number:
+- `8.2e-05` followed by a stale `7` parsed as `8.2e-057`, so the wheel froze.
+- `-0` followed by `62137e-07` (the tail of an earlier `1.62137e-07`) parsed as −6.2 mN m. 42 clamped that to −1 mN m on every wheel.
+
+Which corruption occurs depends on the lengths of the previous message strings. Earlier results were affected only intermittently. That is why the pointing in the first ADCS runs settled with an unexplained offset and overshoot.
+
+**Fix.** A patch to 42, [`nos3/scripts/cfg/patches/42-ipc-parse-bound.patch`](../../nos3/scripts/cfg/patches/42-ipc-parse-bound.patch), makes the parser stop at the number of bytes read, with the buffer terminated there. It is applied to both the generated reader and its generator, so a regeneration keeps it. NOS3's `prepare.sh` applies it after cloning 42. `sil/sil_env.sh` refuses to start with an unpatched 42.
+
+**Verification.**
+- Wheel experiment: wheel 0 reaches and holds exactly 50.0 rad/s (860 µN m s). Disabling the IMU and switching to `SAFE` (zero torque) leave the wheel momentum and the body rate unchanged.
+- ADCS system test, 8/8. Sun pointing now settles to 0.03° with no overshoot; before the fix it held a 3–5° offset. After the IMU failure the body rate stays at 0.01°/s, where it previously jumped to 1.77°/s. See the [ADCS design note](../design/ADCS_DESIGN.md) §7.
+
+**Note.** This defect is in NOS3's version of 42, so it affects any NOS3 user whose simulators command 42's wheels. It is a candidate to report upstream (nasa-itc/42).
+

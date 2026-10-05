@@ -234,11 +234,13 @@ This table defines content and rates. Exact field order, types and offsets are i
 | | 6 | `OBC_DOWNLINK_PACKET` | MID `u16` | Sends one instance of the packet over RF |
 | | 7 | `OBC_NODE_RESET` | node `u8` | Sends `NODE_CMD` reset to an ADCS or EPS node |
 | | 8 | `OBC_REBOOT` | magic `u32` = `0x0B0075ED` | Reboots the OBC. The magic number prevents accidental reboots. |
+| | 9 | `OBC_SET_AUTO_MODES` | state `u8` (`OFF`/`ON`) | Enables or disables the automatic mode transitions (§5.1). On at boot. Fault responses stay active either way. |
 | `0x1A10` | 0 | `ADCS_NOOP` | – | |
-| | 1 | `ADCS_SET_BDOT_GAIN` | gain `f32` | |
-| | 2 | `ADCS_SET_SUN_GAINS` | kp `f32`, kd `f32` | |
-| | 3 | `ADCS_RW_MANUAL` | wheel `u8`, speed `f32` rad/s | Only accepted in `TEST` mode |
+| | 1 | `ADCS_SET_BDOT_GAIN` | gain `f32` A m² s | Rejected unless 0 < gain ≤ 10000 (NaN is rejected too) |
+| | 2 | `ADCS_SET_SUN_GAINS` | kp `f32` s⁻², kd `f32` s⁻¹ | Inertia-normalised (ω_n², 2ζω_n). Rejected unless 0 < kp ≤ 1 and 0 < kd ≤ 10. |
+| | 3 | `ADCS_RW_MANUAL` | wheel `u8`, speed `f32` rad/s | Only accepted in `TEST` mode. Holds a simulated wheel at the given speed (\|speed\| ≤ 600 rad/s). |
 | | 4 | `ADCS_TRQ_MANUAL` | torquer `u8`, duty `i16` (0.01 %) | Only accepted in `TEST` mode |
+| | 5 | `ADCS_PHYS_WHEEL_TEST` | control mode `u8`, set point `i16` (rpm or 0.01 %) | Only in `TEST` mode: drives the physical wheel directly instead of mirroring simulated wheel 0 (DD-05). Cleared when leaving `TEST`. |
 | `0x1A20` | 0 | `EPS_NOOP` | – | |
 | | 1 | `EPS_SWITCH` | switch `u8`, state `u8` | Real load switch on the EPS node, via CAN |
 | | 2 | `EPS_SIM_SWITCH` | switch `u8`, state `u8` | Simulated EPS switch in NOS3, via I2C. Turning the switch off powers the matching device sim down. |
@@ -250,13 +252,13 @@ This table defines content and rates. Exact field order, types and offsets are i
 
 | Value | Mode | ADCS behaviour | Entered when |
 |---|---|---|---|
-| 0 | `SAFE` | Actuators off | Boot, a critical fault, a lost node, or commanded |
+| 0 | `SAFE` | Actuators off | Boot, a sensor fault in an attitude mode, a lost node, battery recovered from `LOW_POWER`, or commanded |
 | 1 | `DETUMBLE` | B-dot with magnetorquers | Commanded, or automatically from `SAFE` when rates exceed the threshold |
-| 2 | `SUN_POINT` | Reaction-wheel sun pointing | Commanded, or automatically after detumble converges |
-| 3 | `LOW_POWER` | Actuators off, reduced telemetry | Simulated battery below threshold |
+| 2 | `SUN_POINT` | Reaction-wheel sun pointing, with momentum management by the magnetorquers | Commanded, or automatically after detumble converges |
+| 3 | `LOW_POWER` | Actuators off. Telemetry other than `OBC_HK`, `BEACON` and the EPS packets at a tenth of its rate. | Simulated battery below threshold |
 | 4 | `TEST` | Manual actuator commands allowed | Commanded only |
 
-The automatic transition thresholds are defined in the ADCS design note, not in this document.
+The automatic transition thresholds and the control laws are defined in the [ADCS design note](../design/ADCS_DESIGN.md) §4–5, not in this document. Every mode change stops all actuators first.
 
 ## 6. CAN bus (IF-03)
 
@@ -331,8 +333,9 @@ At a worst case of about 135 bits per 8-byte frame including bit stuffing, that'
 
 | Condition | Detected by | Response |
 |---|---|---|
-| No `HEARTBEAT` from a node for 3 s | OBC | Node marked lost, `EVENT` raised. ADCS node lost → `SAFE`. |
-| No `RW_TLM` for 500 ms while a wheel is commanded | OBC | Wheel fault, `EVENT` raised, `SAFE` |
+| No `HEARTBEAT` from a node for 3 s | OBC | Node marked lost, `EVENT` raised. ADCS node lost in `DETUMBLE` or `SUN_POINT` → `SAFE` (in `TEST` the operator is in control). |
+| `HEARTBEAT` uptime lower than the previous one, or unchanged after more than 0.5 s | OBC | Node rebooted, `EVENT` raised with the reported reset cause (NCR-008) |
+| No `RW_TLM` for 500 ms while a wheel is commanded | OBC | Wheel fault, `EVENT` raised; `SAFE` in `DETUMBLE` or `SUN_POINT` |
 | No `RW_CMD` for 1 s | ADCS node | Stops the wheel, sends `FAULT` |
 | No OBC `HEARTBEAT` for 3 s | ADCS and EPS nodes | Enter local safe state (wheel off). Load switches keep their last state. |
 | TX or RX error counter > 96 (MCP2515 error-warning level) | Any node | `FAULT` sent and reported in `OBC_HK` |
@@ -486,3 +489,6 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | 1.0 draft d | 2026-10-01 | Hardware selected (BOM): Pico-CAN-B, Pico-LoRa-SX1262; DD-07 reworded; closed OI-07, added OI-08 |
 | 1.0 draft e | 2026-10-02 | COSMOS integration of the umbilical (§3.6); enum keys quoted (NCR-002); closed OI-03 |
 | 1.0 draft f | 2026-10-02 | Bus open frames `I2C_OPEN`/`SPI_OPEN`/`CAN_OPEN` (§8.1, NCR-004) |
+| 1.0 draft g | 2026-10-04 | `OBC_HK.SENSOR_MISSES` (NCR-005); `ADCS_STATE.PHYS_RW_STATUS`; command `ADCS_PHYS_WHEEL_TEST` |
+| 1.0 draft h | 2026-10-04 | §6.5: reboot detection rule (NCR-008); `SAFE` transitions on node and wheel faults apply in the attitude modes only |
+| 1.0 draft i | 2026-10-05 | ADCS (Phase 2): `OBC_SET_AUTO_MODES`; gain units and limits; `ADCS_RW_MANUAL` implemented; `ADCS_STATE.RW_CMD_SPEED` replaced by `RW_CMD_TORQUE`, `AUTO_MODES` added; mode reason `BATTERY_RECOVERED`; §5.1 behaviour per mode |

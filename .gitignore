@@ -11,3 +11,6 @@ __pycache__/
 
 # Software-in-the-loop run logs
 sil/logs/
+
+# Regression campaign logs
+tests/logs/
