@@ -163,6 +163,11 @@ void obc_adcs_step(void)
     obc_sensors_acquire_adcs();
     obc.adcs.sun_valid =
         (uint8_t)(sensors_ok(OBC_VALID_CSS) && adcs_sun_from_css(obc.css.illum, ADCS_CSS_MIN, obc.adcs.sun));
+    /* Reported in every mode: knowing where the Sun is doesn't depend on which control law runs */
+    if (sensors_ok(OBC_VALID_CSS))
+    {
+        obc.adcs.pointing_error = obc.adcs.sun_valid ? acosf(fmaxf(-1.0f, fminf(1.0f, obc.adcs.sun[0]))) : -1.0f;
+    }
 
     switch (obc.mode)
     {
@@ -298,8 +303,7 @@ void obc_adcs_mode_changed(uint8_t from, uint8_t to)
     adcs_bdot_reset(&bdot);
     last_mag_us = 0;
     memset(obc.adcs.manual_rw, 0, sizeof(obc.adcs.manual_rw));
-    obc.adcs.converged      = 0;
-    obc.adcs.pointing_error = -1.0f;
+    obc.adcs.converged = 0;
     reset_timers();
 }
 

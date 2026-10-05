@@ -324,7 +324,9 @@ In the logs:
 
 So 42 itself stopped advancing, or started sending corrupt output, with no input from the flight software. The same test passed in two earlier campaign runs that day and in three immediate reruns.
 
-**Actions so far.** `sil/sil_env.sh` now has a 42 watchdog. If 42's `time.42` output stops changing for 3 s, it prints `WARNING: 42 has stopped advancing ... results from now on are invalid` and saves the process state and the last output lines to `42-stall.txt` in the run's log directory. This keeps an environment failure from being mistaken for a flight software failure, and captures evidence the next time it happens.
+**Actions so far.** `sil/sil_env.sh` now has a 42 watchdog. If 42's simulation time, as logged several times a second by the truth simulator, stops changing for 6 s, it prints `WARNING: 42 has stopped advancing ... results from now on are invalid` and saves the process state and the last truth samples to `42-stall.txt` in the run's log directory. This keeps an environment failure from being mistaken for a flight software failure, and captures evidence the next time it happens.
+
+The first version watched 42's `time.42` output file and raised false alarms in an operator session. 42 writes its output files in buffered chunks a couple of minutes apart, so between chunks the file looked frozen.
 
 **Next.** On recurrence: check whether 42 is alive and where it is blocked (`42-stall.txt`, then `gdb -p` or `/proc/<pid>/stack`), and whether it coincides with COSMOS and the SIL starting together. One candidate is CPU starvation at start-up; another is a blocking write on one of 42's TX sockets.
 
