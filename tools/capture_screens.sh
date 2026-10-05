@@ -22,6 +22,7 @@ SIL_NAME=flatsat-capture-sil-$$
 COSMOS_NAME=flatsat-capture-cosmos-$$
 export SIL_LOG_DIR=$ROOT/sil/logs/capture-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd) # docker -v needs an absolute path (a relative one names a volume)
 
 cleanup()
 {
@@ -35,8 +36,12 @@ docker run -d --rm --name "$COSMOS_NAME" --network "$NET" --network-alias flatsa
     -v "$ROOT:$ROOT" -v "$OUT:/shots" -w "$COSMOS_DIR" -e PROCESSOR_ENDIANNESS=LITTLE_ENDIAN \
     ballaerospace/cosmos:4.5.0 ruby tools/CmdTlmServer --no-gui > /dev/null
 echo "[capture] installing a virtual display in the COSMOS container..."
-docker exec "$COSMOS_NAME" bash -c 'apt-get update -qq && apt-get install -y -qq xvfb imagemagick' > /dev/null 2>&1 ||
-    { echo "[capture] could not install Xvfb" >&2; exit 1; }
+for try in 1 2 3; do # the package mirrors occasionally time out
+    docker exec "$COSMOS_NAME" bash -c 'apt-get update -qq && apt-get install -y -qq xvfb imagemagick' > /dev/null 2>&1 &&
+        break
+    [ $try = 3 ] && { echo "[capture] could not install Xvfb" >&2; exit 1; }
+    sleep 10
+done
 
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_DETACH=1 SIL_GS_ARGS="--lat 37.9402 --lon -75.4664 --alt 10" \
     "$ROOT/sil/sil.sh" 'sil/start_nodes.sh && { firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 & sleep 3600; }' \
@@ -49,8 +54,9 @@ start=$(date +%s)
 echo "[capture] simulation running; screens open in 30 s, screenshots at $AT s"
 sleep 30
 
-# One virtual display per screen, so the windows don't overlap
-docker exec -d "$COSMOS_NAME" bash -c 'Xvfb :91 -screen 0 1100x900x24 & Xvfb :92 -screen 0 1100x900x24 & sleep 2
+# One virtual display per screen, so the windows do not overlap; large, so the (centred) pointer sits outside the
+# window and no tooltip ends up in the picture
+docker exec -d "$COSMOS_NAME" bash -c 'Xvfb :91 -screen 0 2400x1800x24 & Xvfb :92 -screen 0 2400x1800x24 & sleep 2
     DISPLAY=:91 ruby tools/TlmViewer -n -s "FLATSAT OVERVIEW" > /tmp/tv1.log 2>&1 &
     DISPLAY=:92 ruby tools/TlmViewer -n -s "FLATSAT_RF GROUND_STATION" > /tmp/tv2.log 2>&1 &
     sleep 7200'

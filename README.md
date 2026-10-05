@@ -4,6 +4,18 @@ A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, 
 
 > **Status:** early development. The software-in-the-loop phase runs during October 2026 and the hardware build follows. This README will grow as the project does.
 
+## What it looks like
+
+The flight computer has just detumbled the spacecraft after deployment and pointed it at the Sun, and the satellite is in the middle of a pass over the ground station. These are COSMOS screens with live data from the software-in-the-loop setup, captured by `tools/capture_screens.sh`.
+
+![Mission overview: modes, attitude, wheels, power and radio, with the pointing error falling from 110 degrees to zero](docs/images/cosmos_overview.png)
+
+*Mission overview over the umbilical. The pointing error falls from 110° to 0.06° as the wheels slew the spacecraft to the Sun. The physical wheel on the ADCS node tracks simulated wheel 0 at 1/10 scale.*
+
+![Ground station: pass geometry, link quality and the last beacon received over the radio](docs/images/cosmos_ground_station.png)
+
+*Ground station over the radio link, mid-pass over NASA Wallops. The elevation rises to 62°, and the received signal strength follows it, from −120 to −111 dBm. The beacon and events arrive only while the spacecraft is above the horizon.*
+
 ## Concept
 
 | Subsystem | Real hardware | Simulated by NOS3 |
