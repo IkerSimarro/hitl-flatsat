@@ -15,6 +15,8 @@ NODE = {'OBC': 1, 'ADCS': 2, 'EPS': 3}
 NODE_STATE = {'BOOT': 0, 'NOMINAL': 1, 'SAFE': 2, 'FAULT': 3}
 NODE_CMD = {'PING': 1, 'RESET': 2, 'ENTER_SAFE': 3}
 SWITCH_STATE = {'OFF': 0, 'ON': 1}
+RF_FRAME_TYPE = {'TM': 0, 'TC': 1, 'BEACON': 2, 'HAIL': 3}
+CONTACT_MODE = {'ORBITAL': 0, 'ALWAYS': 1, 'NEVER': 2, 'CYCLE': 3}
 
 # name: (mid, payload struct format, field names)
 TLM = {
@@ -25,8 +27,9 @@ TLM = {
     'ADCS_SENSORS': (0x0A11, '<HHfffffffffffffffffffffffffffHHf', ['VALID_MASK', 'SPARE', 'IMU_RATE_0', 'IMU_RATE_1', 'IMU_RATE_2', 'IMU_ACCEL_0', 'IMU_ACCEL_1', 'IMU_ACCEL_2', 'MAG_0', 'MAG_1', 'MAG_2', 'FSS_ALPHA', 'FSS_BETA', 'CSS_0', 'CSS_1', 'CSS_2', 'CSS_3', 'CSS_4', 'CSS_5', 'ST_QUAT_0', 'ST_QUAT_1', 'ST_QUAT_2', 'ST_QUAT_3', 'GPS_POS_ECEF_0', 'GPS_POS_ECEF_1', 'GPS_POS_ECEF_2', 'GPS_VEL_ECEF_0', 'GPS_VEL_ECEF_1', 'GPS_VEL_ECEF_2', 'GPS_WEEK', 'SPARE2', 'GPS_SOW']),
     'EPS_SIM': (0x0A20, '<ffffffffBBH', ['BATT_V', 'BATT_TEMP', 'BUS_3V3', 'BUS_5V0', 'BUS_12V', 'EPS_TEMP', 'SA_V', 'SA_TEMP', 'SWITCH_MASK', 'ECLIPSE', 'SPARE']),
     'EPS_REAL': (0x0A21, '<HHHhhhHHHHhBBBBHI', ['RAIL_MV_0', 'RAIL_MV_1', 'RAIL_MV_2', 'RAIL_MA_0', 'RAIL_MA_1', 'RAIL_MA_2', 'RAIL_MW_0', 'RAIL_MW_1', 'RAIL_MW_2', 'BATT_MV', 'BATT_MA', 'CHARGE_STATE', 'SWITCH_MASK', 'SWITCH_FAULT_MASK', 'EPS_NODE_STATE', 'SPARE', 'EPS_UPTIME']),
-    'COMMS_STATS': (0x0A30, '<IIHHhbBHHII', ['RF_TX_FRAMES', 'RF_RX_FRAMES', 'RF_CRC_ERRORS', 'RF_REJECTED', 'LAST_RSSI', 'LAST_SNR', 'CONTACT', 'DUTY_CYCLE', 'TX_QUEUE_DEPTH', 'UMB_TX_PACKETS', 'UMB_RX_PACKETS']),
+    'COMMS_STATS': (0x0A30, '<IIHHhbBHHIIHHbBH', ['RF_TX_FRAMES', 'RF_RX_FRAMES', 'RF_CRC_ERRORS', 'RF_REJECTED', 'LAST_RSSI', 'LAST_SNR', 'CONTACT', 'DUTY_CYCLE', 'TX_QUEUE_DEPTH', 'UMB_TX_PACKETS', 'UMB_RX_PACKETS', 'TX_QUEUE_DROPS', 'BEACON_PERIOD', 'TX_POWER', 'SPARE', 'SPARE2']),
     'PING_REPLY': (0x0A31, '<IIHH', ['TOKEN', 'RX_SECONDS', 'RX_SUBSECONDS', 'SPARE']),
+    'GS_STATUS': (0x0A40, '<BBbBhHfffIHHIIIIIHHHH', ['CONTACT', 'CONTACT_MODE', 'LAST_SNR', 'SPARE', 'LAST_RSSI', 'UP_QUEUE', 'ELEVATION', 'AZIMUTH', 'RANGE', 'NEXT_AOS', 'NEXT_PASS_DURATION', 'NEXT_MAX_ELEVATION', 'DOWN_FRAMES', 'DOWN_LOST', 'DOWN_NO_CONTACT', 'DOWN_REJECTED', 'UP_FRAMES', 'UP_DROPPED', 'LOSS_RATE', 'DUTY_CYCLE', 'SPARE2']),
 }
 TLM_BY_MID = {v[0]: k for k, v in TLM.items()}
 STRING_FIELDS = {'EVENT': ('TEXT',)}
@@ -55,6 +58,11 @@ CMD = {
     'COMMS_NOOP': (0x1A30, 0, '<', []),
     'COMMS_SET_TX_POWER': (0x1A30, 1, '<b', ['POWER']),
     'COMMS_SET_BEACON_PERIOD': (0x1A30, 2, '<H', ['PERIOD']),
+    'GS_NOOP': (0x1A40, 0, '<', []),
+    'GS_SET_CONTACT_MODE': (0x1A40, 1, '<BBHH', ['MODE', 'SPARE', 'ON_TIME', 'OFF_TIME']),
+    'GS_SET_LOSS': (0x1A40, 2, '<H', ['LOSS']),
+    'GS_CORRUPT_NEXT': (0x1A40, 3, '<B', ['COUNT']),
+    'GS_FLUSH_QUEUE': (0x1A40, 4, '<', []),
 }
 CMD_BY_ID = {(v[0], v[1]): k for k, v in CMD.items()}
 
@@ -138,6 +146,9 @@ def parse_telemetry(data):
     if length != len(data) - 7:
         raise ValueError("length field does not match packet size")
     _mid, fmt, names = TLM[name]
+    if len(data) - TLM_HEADER.size != struct.calcsize(fmt):
+        raise ValueError(f"{name}: {len(data) - TLM_HEADER.size}-byte payload, expected {struct.calcsize(fmt)} "
+                         f"(flight and ground software built from different ICD versions?)")
     values = struct.unpack(fmt, data[TLM_HEADER.size:])
     header = {"seq": seq & 0x3FFF, "seconds": seconds, "subseconds": subseconds}
     return name, header, dict(zip(names, values))

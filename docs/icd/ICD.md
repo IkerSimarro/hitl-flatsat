@@ -190,8 +190,12 @@ Both carry raw space packets over UDP, one packet per datagram.
 | 9011 | COSMOS (`cosmos`) | Umbilical telemetry from the bridge |
 | 9020 | HIL bridge | SIL RF frames to the OBC, from the ground link emulator |
 | 9021 | Ground station software (`flatsat-gs`) | SIL RF frames from the OBC |
-| 9030 | Ground station software | RF telecommands from COSMOS `FLATSAT_RF` |
-| 9031 | COSMOS | RF telemetry from the ground station software |
+| 9030 | Ground station software | RF telecommands from COSMOS `FLATSAT_RF`, and `GS_*` commands |
+| 9031 | COSMOS | RF telemetry and `GS_STATUS` from the ground station software |
+| 9032 | Ground station software | 42 truth, from the SIL truth relay |
+| 5112 | SIL tests and tools | 42 truth, from the SIL truth relay |
+
+**42 truth relay (SIL).** `truth42sim` sends 42's truth to one UDP port, 5111, and a port has only one reader. In the SIL environment `sil/truth_relay.py` reads 5111 and fans the stream out to the ground station software (9032), to tests and tools (5112) and, when present, to COSMOS (5111 on the ground segment host).
 
 **COSMOS configuration.** The `FLATSAT` target (packet definitions generated from the ICD, plus `lib/flatsat_checksum_protocol.rb`) lives in the NOS3 fork at `components/hil_bridge/gsw/FLATSAT`, which NOS3's COSMOS build copies in with every other component. `make config` appends the target declaration and the interface from `components/hil_bridge/cosmos/` to the generated COSMOS `system.txt` and `cmd_tlm_server.txt`:
 
@@ -359,13 +363,17 @@ One RF frame per LoRa packet, at most 255 bytes:
 
 | Offset | Size | Field | Notes |
 |---|---|---|---|
-| 0 | 1 | Header | Bits 7–6 version (0), bits 5–4 frame type (0 TM, 1 TC, 2 beacon), bits 3–0 reserved (0) |
+| 0 | 1 | Header | Bits 7–6 version (0), bits 5–4 frame type (0 TM, 1 TC, 2 beacon, 3 hail), bits 3–0 reserved (0) |
 | 1 | 1 | Spacecraft ID | `0x01` |
 | 2 | 2 | Frame counter | Per direction, wraps. Big-endian. Gaps in the counter measure frame loss. |
 | 4 | n ≤ 249 | Space packet | Exactly one packet (§3) |
 | 4+n | 2 | CRC | CRC-16/CCITT-FALSE over bytes 0..3+n, big-endian; the same algorithm as the CCSDS frame error control field |
 
-Receivers drop frames that fail the CRC, have the wrong spacecraft ID or an unknown version, and count them in `COMMS_STATS`.
+A **hail** frame (type 3) carries no space packet: it's 6 bytes. The ground station sends one every 20 s during a contact, to tell the spacecraft it's being heard (§7.4).
+
+Receivers drop frames that fail the CRC, have the wrong spacecraft ID or an unknown version, and count them: `COMMS_STATS` on board, `GS_STATUS` on the ground.
+
+The frame code is `firmware/common/src/fs_rf.c`, with its Python twin `ground/flatsat_rf.py`; both are checked against the same test vectors.
 
 ### 7.3 Airtime and duty-cycle budget
 
@@ -374,19 +382,47 @@ Receivers drop frames that fail the CRC, have the wrong spacecraft ID or an unkn
 | 255-byte frame | ≈ 400 ms |
 | 40-byte beacon | ≈ 80 ms |
 
-The legal limit is 10 % duty cycle, which is 360 s of transmission per hour. The **design budget is 5 %**, leaving 50 % margin. The OBC enforces it with a rolling one-hour airtime counter and defers non-beacon frames when the budget is used up. A beacon every 10 s uses about 0.8 %; the remainder is for on-request packets and queued events.
+Airtime follows Semtech AN1200.13: a 6-byte hail takes 36 ms, a 42-byte beacon 87 ms, and a 255-byte frame 400 ms.
+
+The legal limit is 10 % duty cycle, which is 360 s of transmission per hour. The **design budget is 5 %**, leaving 50 % margin. The OBC enforces it with a rolling one-hour airtime counter, kept in one-minute buckets:
+- non-beacon frames are deferred once the hour's airtime reaches 5 %;
+- beacons stop only at the legal 10 %.
+
+A beacon every 10 s uses about 0.9 %; the remainder is for on-request packets and queued events. The ground station applies the same 5 % budget to its own transmitter.
+
+**On-board rules** (`firmware/obc/obc_comms.c`):
+- **Beacon:** every `COMMS_SET_BEACON_PERIOD` seconds (default 10; 0 = off; otherwise 5–3600), whatever the contact state.
+- **Contact:** the OBC is in contact while it has received a valid TC or hail frame within the last 45 s. With a hail every 20 s, this tolerates one lost hail.
+- **Queue:** in contact, queued packets go down oldest first, one frame at a time; the radio is busy for each frame's airtime. The queue holds 16 packets: events, `OBC_DOWNLINK_PACKET` requests, and replies to commands that arrived over RF. When it's full the oldest packet is dropped, counted in `COMMS_STATS.TX_QUEUE_DROPS`.
+- **`LOW_POWER`:** beacons only; the queue waits.
 
 This is a deliberate flight-like constraint: the RF link carries health and selected data, while the umbilical carries everything during testing. It's the same split as in a real AIT campaign.
 
 ### 7.4 Contact windows (IF-07)
 
-- **Ground station:** ESA ESAC, Villafranca del Castillo, 40.4427° N, 3.9529° W, 10° elevation mask (configurable).
-- **Calculation:** the ground station software computes the satellite's elevation from the ECEF position in the 42 truth packet (`POSITION_W`), which `truth42sim` sends over UDP.
-- **Outside contact:** the ground station software neither transmits nor delivers received frames.
-- **Contact modes**, a ground configuration setting:
-  - `orbital`: real windows. At NOS3's 1:1 speed, a pass happens only every few orbits.
-  - `always`: for development and demos.
-  - `never`: for loss-of-signal tests.
+- **Ground station:** ESA ESAC, Villafranca del Castillo, 40.4427° N, 3.9529° W, 10° elevation mask. All of these are configurable.
+  - From NOS3's default start epoch, the first pass over ESAC begins about 19 minutes in: 5 minutes long, 20° maximum elevation. A 75° pass follows about 2 hours in.
+  - The pass test uses NASA Wallops (37.9402° N, 75.4664° W), which the spacecraft rises over about 4 minutes in: a 6.5-minute pass reaching 62°.
+- **Geometry:** the ground station software computes elevation, azimuth and range from the Earth-fixed position in each 42 truth sample.
+- **Prediction:** every 5 minutes it predicts the next 12 hours of passes, reported in `GS_STATUS`.
+  - It propagates the latest truth state as a two-body orbit, which is how 42 propagates NOS3's orbit.
+  - It maps inertial to Earth-fixed axes with a rotation solved from the truth position and velocity pairs (TRIAD), which includes precession.
+  - Predicted and actual AOS and LOS agree to within a few seconds (`tests/system/test_rf_pass.py`).
+- **Outside contact:** the ground station software neither transmits nor delivers received frames. Telecommands from COSMOS wait in its uplink queue: 32 entries, each expiring after 15 minutes.
+- **In contact:**
+  - a hail every 20 s, and queued telecommands, one frame at a time;
+  - received TM and beacon frames delivered to COSMOS;
+  - every frame delivered after its airtime, as a real radio would complete it.
+- **Link model**, used in the `orbital` mode. It models a flight link: 22 dBm from the spacecraft, a 12 dBi Yagi on the ground, free-space loss at 869.525 MHz, and a 6 dB receiver noise figure.
+  - This gives about −109 dBm and +8 dB SNR overhead, and −122 dBm and −5 dB SNR near the 10° mask.
+  - A frame's success probability falls off around the SF7 demodulation limit (−7.5 dB SNR), and a configurable random loss (`GS_SET_LOSS`) applies on top. Both directions see the same link.
+  - The uplink's RSSI and SNR reach the OBC with each frame (§7.5).
+  - The FlatSat's real radios sit on a desk at 2 dBm; the model shows what the same frames would see from orbit.
+- **Contact modes** (`GS_SET_CONTACT_MODE`, or `--mode` at start-up):
+  - `ORBITAL`: real windows from the geometry; the default.
+  - `ALWAYS`: for development and demos.
+  - `NEVER`: for loss-of-signal tests.
+  - `CYCLE`: on for `ON_TIME`, then off for `OFF_TIME`, repeating; for tests and demos.
 
 ### 7.5 Ground modem (IF-05)
 
@@ -400,7 +436,37 @@ The ground modem is a Pico 2 with a Pico-LoRa-SX1262 board, connected over USB. 
 
 The modem is a pure radio: it doesn't parse frames, so all link logic lives in the ground station software.
 
-In SIL there is no modem. The OBC sends `RF_TX` over the umbilical, and the bridge forwards the RF frame by UDP to the ground station software's link emulator, which applies the contact-window rules, the duty-cycle budget and a configurable loss rate.
+In SIL there is no modem. The OBC sends `RF_TX` over the umbilical, and the bridge forwards the RF frame by UDP to the ground station software's link emulator, port 9021. The emulator applies the contact rules, the link model and the duty-cycle budget.
+
+Frames towards the OBC go to the bridge on port 9020, each preceded by 4 bytes of metadata:
+- RSSI, `i16` dBm, big-endian;
+- SNR, `i8`, in 0.25 dB steps;
+- flags, `u8`, set to 0.
+
+The bridge moves the metadata into the `RF_RX` frame's `addr`, exactly as the modem does.
+
+### 7.6 Ground station commands and status
+
+The ground station software executes `GS_*` commands (MID `0x1A40`) itself and never uplinks them. They arrive through COSMOS target `FLATSAT_RF`:
+
+| FC | Command | Effect |
+|---|---|---|
+| 0 | `GS_NOOP` | Logged |
+| 1 | `GS_SET_CONTACT_MODE` | Mode, plus on and off times for `CYCLE` (§7.4) |
+| 2 | `GS_SET_LOSS` | Random frame loss in 0.1 % steps, both directions |
+| 3 | `GS_CORRUPT_NEXT` | Corrupt the CRC of the next *n* uplink frames: fault injection for the OBC's frame checks |
+| 4 | `GS_FLUSH_QUEUE` | Discard queued telecommands |
+
+The software sends `GS_STATUS` (MID `0x0A40`) to COSMOS once a second. It contains:
+- contact state and mode;
+- elevation, azimuth and range;
+- the next pass: time to AOS, duration, maximum elevation;
+- RSSI and SNR of the last downlink frame;
+- frames delivered, lost, received outside contact, and rejected;
+- uplink frames sent, queued and expired;
+- the configured loss and the ground transmitter's airtime.
+
+COSMOS shows the same packet definitions twice: as target `FLATSAT` (umbilical) and as target `FLATSAT_RF` (radio). This keeps what arrived over the radio separate from what the umbilical carries.
 
 ## 8. Umbilical: HIL link (IF-01) and bridge mapping (IF-02)
 
@@ -491,4 +557,5 @@ The OBC has no access to the NOS3 time bus, so the bridge forwards simulation ti
 | 1.0 draft f | 2026-10-02 | Bus open frames `I2C_OPEN`/`SPI_OPEN`/`CAN_OPEN` (§8.1, NCR-004) |
 | 1.0 draft g | 2026-10-04 | `OBC_HK.SENSOR_MISSES` (NCR-005); `ADCS_STATE.PHYS_RW_STATUS`; command `ADCS_PHYS_WHEEL_TEST` |
 | 1.0 draft h | 2026-10-04 | §6.5: reboot detection rule (NCR-008); `SAFE` transitions on node and wheel faults apply in the attitude modes only |
+| 1.0 draft j | 2026-10-05 | RF link (Phase 2): hail frame and on-board contact rule; airtime figures and on-board TX rules (§7.3); link model, pass prediction, `CYCLE` mode (§7.4); SIL RF metadata (§7.5); ground station commands and `GS_STATUS` (§7.6), with target `FLATSAT_RF`; `COMMS_STATS` gains `TX_QUEUE_DROPS`, `BEACON_PERIOD`, `TX_POWER`; truth relay ports 9032 and 5112 (§3.6) |
 | 1.0 draft i | 2026-10-05 | ADCS (Phase 2): `OBC_SET_AUTO_MODES`; gain units and limits; `ADCS_RW_MANUAL` implemented; `ADCS_STATE.RW_CMD_SPEED` replaced by `RW_CMD_TORQUE`, `AUTO_MODES` added; mode reason `BATTERY_RECOVERED`; §5.1 behaviour per mode |

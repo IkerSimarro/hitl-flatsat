@@ -113,6 +113,11 @@ int dev_gps_poll(dev_gps_t *out);
 /* Lines rejected because their NovAtel CRC-32 didn't match */
 uint32_t dev_gps_crc_errors(void);
 
+/* ---- Radio (ICD 7.1; software-in-the-loop: through the umbilical to the link emulator) ---- */
+
+int dev_radio_send(const uint8_t *frame, size_t len);
+int dev_radio_set_power(int8_t dbm);
+
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 
 #define DEV_RW_MAX_TORQUE 0.001 /* N m (42 SC_NOS3.txt) */

@@ -241,7 +241,7 @@ static void dispatch(const hil_frame_t *f)
         case HIL_RF_RX:
             if (handlers.on_rf_frame)
             {
-                handlers.on_rf_frame(f->payload, f->len);
+                handlers.on_rf_frame(f->payload, f->len, (int16_t)(f->addr & 0xFFFFu), (int8_t)((f->addr >> 16) & 0xFFu));
             }
             break;
 

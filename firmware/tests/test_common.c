@@ -10,6 +10,7 @@
 #include "fs_ccsds.h"
 #include "fs_hal.h"
 #include "fs_node.h"
+#include "fs_rf.h"
 #include "fs_persist.h"
 #include "fs_sched.h"
 #include "fs_time.h"
@@ -523,6 +524,56 @@ static void test_node(void)
     CHECK(count_sent(FLATSAT_CAN_NODE_ACK_TYPE) == 3 && fake_reboots == 1);
 }
 
+/* RF frames and airtime (ICD 7.2, 7.3); the same vectors are checked in tests/unit/test_rf.py */
+static void test_rf(void)
+{
+    const uint8_t check[] = "123456789";
+    const uint8_t pkt[]   = {0x0A, 0x01, 0xC0, 0x00, 0x00, 0x05, 1, 2, 3, 4, 5, 6};
+    uint8_t       frame[FS_RF_MAX_FRAME + 4];
+    uint8_t       big[FS_RF_MAX_DATA + 1];
+    fs_rf_frame_t f;
+    size_t        n;
+
+    CHECK(fs_rf_crc16(check, 9) == 0x29B1); /* CRC-16/CCITT-FALSE check value */
+
+    n = fs_rf_build(frame, sizeof(frame), FLATSAT_RF_FRAME_TYPE_BEACON, 0x1234, pkt, sizeof(pkt));
+    CHECK(n == FS_RF_HDR_LEN + sizeof(pkt) + FS_RF_CRC_LEN);
+    CHECK(frame[0] == 0x20 && frame[1] == FS_RF_SCID && frame[2] == 0x12 && frame[3] == 0x34);
+    CHECK(frame[n - 2] == 0x7F && frame[n - 1] == 0x28); /* same vector as test_rf.py */
+    CHECK(fs_rf_parse(frame, n, &f) == FS_RF_OK);
+    CHECK(f.type == FLATSAT_RF_FRAME_TYPE_BEACON && f.counter == 0x1234 && f.data_len == sizeof(pkt) &&
+          memcmp(f.data, pkt, sizeof(pkt)) == 0);
+
+    frame[6] ^= 0x01;
+    CHECK(fs_rf_parse(frame, n, &f) == FS_RF_ERR_CRC);
+    frame[6] ^= 0x01;
+    frame[1] = 0x02; /* another spacecraft (CRC recomputed so only the ID is wrong) */
+    n        = fs_rf_build(frame, sizeof(frame), FLATSAT_RF_FRAME_TYPE_TM, 1, pkt, sizeof(pkt));
+    frame[1] = 0x02;
+    {
+        uint16_t crc = fs_rf_crc16(frame, n - 2);
+        frame[n - 2] = (uint8_t)(crc >> 8);
+        frame[n - 1] = (uint8_t)crc;
+    }
+    CHECK(fs_rf_parse(frame, n, &f) == FS_RF_ERR_ID);
+    CHECK(fs_rf_parse(frame, 5, &f) == FS_RF_ERR_LENGTH);
+
+    /* A hail carries no packet */
+    n = fs_rf_build(frame, sizeof(frame), FLATSAT_RF_FRAME_TYPE_HAIL, 7, NULL, 0);
+    CHECK(n == 6 && fs_rf_parse(frame, n, &f) == FS_RF_OK && f.type == FLATSAT_RF_FRAME_TYPE_HAIL &&
+          f.data_len == 0);
+
+    /* Too long for one LoRa packet, or too small a buffer */
+    memset(big, 0, sizeof(big));
+    CHECK(fs_rf_build(frame, sizeof(frame), FLATSAT_RF_FRAME_TYPE_TM, 0, big, sizeof(big)) == 0);
+    CHECK(fs_rf_build(frame, 10, FLATSAT_RF_FRAME_TYPE_TM, 0, pkt, sizeof(pkt)) == 0);
+
+    /* Airtime, SF7/125 kHz/CR 4/5: ICD 7.3 says ~400 ms for 255 bytes, ~80 ms for a 40-byte beacon */
+    CHECK(fs_rf_airtime_us(255) == 399616u);
+    CHECK(fs_rf_airtime_us(42) == 87296u);
+    CHECK(fs_rf_airtime_us(6) == 36096u);
+}
+
 int main(void)
 {
     fs_hal_init(0, NULL);
@@ -537,6 +588,7 @@ int main(void)
     test_persistence();
     test_can();
     test_node();
+    test_rf();
 
     if (failures)
     {

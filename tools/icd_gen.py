@@ -8,6 +8,10 @@ Outputs (all marked "generated, do not edit"):
     nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_CMD.txt
                                                 COSMOS 4 packet definitions (NOS3's COSMOS build copies
                                                 components/*/gsw into its configuration)
+    nos3/components/hil_bridge/gsw/FLATSAT_RF/cmd_tlm/FLATSAT_RF_{TLM,CMD}.txt
+                                                The same packets as target FLATSAT_RF: what arrives over the
+                                                (simulated) radio link through the ground station, kept apart
+                                                from the umbilical's FLATSAT (ICD 3.6)
     docs/icd/ICD_layouts.md                     Byte-level layout tables
 
 Usage:
@@ -258,6 +262,29 @@ def cosmos_desc(f):
     return (f.get("desc") or f["name"].replace("_", " ").capitalize()).replace('"', "'")
 
 
+FORMATS = {"deg": "%.2f", "deg/s": "%.3f", "rpm": "%.0f", "km": "%.0f", "m": "%.0f", "m/s": "%.1f", "V": "%.2f",
+           "T": "%.3e", "N m": "%.2e", "m/s2": "%.3f", "%": "%.1f", "dB": "%.1f"}
+
+
+def display_units(units, display=None):
+    """(scale, display units) for a field's wire units: radians as degrees, and scaled units such as
+    "0.25 dB" or "0.1 %" in plain units. display: an explicit choice, e.g. "rpm" for wheel speeds."""
+    if not units:
+        return 1.0, units
+    deg = 180.0 / 3.141592653589793
+    if display == "rpm" and units == "rad/s":
+        return 60.0 / (2 * 3.141592653589793), "rpm"
+    if units in ("rad", "rad/s"):
+        return deg, units.replace("rad", "deg")
+    if units == "mrad/s":
+        return deg / 1000.0, "deg/s"
+    first, _, rest = units.partition(" ")
+    try:
+        return float(first), rest
+    except ValueError:
+        return 1.0, units
+
+
 def cosmos_items(fields, enums, command):
     lines = []
     for f in fields:
@@ -275,18 +302,32 @@ def cosmos_items(fields, enums, command):
                 lines.append(f'  APPEND_PARAMETER {nm} {bits} {ctype} {rng} "{cosmos_desc(f)}"')
             else:
                 lines.append(f'  APPEND_ITEM {nm} {bits} {ctype} "{cosmos_desc(f)}"')
-            if f.get("units"):
-                lines.append(f'    UNITS "{f["units"]}" "{f["units"]}"')
+            units = f.get("units")
+            if not command:
+                # Wire units (ICD) -> display units on the screens; scripts can still read the RAW value
+                scale, units = display_units(units, f.get("display"))
+                if scale != 1.0:
+                    lines.append(f"    POLY_READ_CONVERSION 0 {scale!r}")
+                if ctype == "FLOAT" or scale != 1.0:
+                    fmt = FORMATS.get(units, "%.4g")
+                    if units == "%" and scale == 0.01:
+                        fmt = "%.2f"
+                    lines.append(f'    FORMAT_STRING "{fmt}"')
+            if units:
+                lines.append(f'    UNITS "{units}" "{units}"')
+            if not command and "limits" in f:
+                # red low, yellow low, yellow high, red high (in display units)
+                lines.append(f"    LIMITS DEFAULT 1 ENABLED {' '.join(str(x) for x in f['limits'])}")
             if "enum" in f:
                 for k, v in enums[f["enum"]]["values"].items():
                     lines.append(f"    STATE {k} {v}")
     return lines
 
 
-def gen_cosmos_tlm(icd):
+def gen_cosmos_tlm(icd, target="FLATSAT"):
     o = [f"# {HEADER_NOTE}", ""]
     for p in icd["tlm"]:
-        o += [f'TELEMETRY FLATSAT {p["name"]} LITTLE_ENDIAN "{p["desc"]}"',
+        o += [f'TELEMETRY {target} {p["name"]} LITTLE_ENDIAN "{p["desc"]}"',
               f'  APPEND_ID_ITEM CCSDS_STREAMID 16 UINT 0x{p["mid"]:04X} "CCSDS packet identification" BIG_ENDIAN',
               '  APPEND_ITEM CCSDS_SEQUENCE 16 UINT "CCSDS packet sequence control" BIG_ENDIAN',
               '  APPEND_ITEM CCSDS_LENGTH 16 UINT "CCSDS packet data length" BIG_ENDIAN',
@@ -298,12 +339,12 @@ def gen_cosmos_tlm(icd):
     return "\n".join(o)
 
 
-def gen_cosmos_cmd(icd):
+def gen_cosmos_cmd(icd, target="FLATSAT"):
     o = [f"# {HEADER_NOTE}",
          "# CCSDS_CHECKSUM must make the XOR of all packet bytes equal 0xFF (ICD 3.2);",
          "# the FlatSat interfaces fill it in with lib/flatsat_checksum_protocol.rb.", ""]
     for c in icd["cmds"]:
-        o += [f'COMMAND FLATSAT {c["name"]} LITTLE_ENDIAN "{c["desc"] or c["name"]}"',
+        o += [f'COMMAND {target} {c["name"]} LITTLE_ENDIAN "{c["desc"] or c["name"]}"',
               f'  APPEND_ID_PARAMETER CCSDS_STREAMID 16 UINT MIN_UINT16 MAX_UINT16 0x{c["mid"]:04X} '
               f'"CCSDS packet identification" BIG_ENDIAN',
               '  APPEND_PARAMETER CCSDS_SEQUENCE 16 UINT MIN_UINT16 MAX_UINT16 0xC000 '
@@ -399,6 +440,9 @@ def parse_telemetry(data):
     if length != len(data) - 7:
         raise ValueError("length field does not match packet size")
     _mid, fmt, names = TLM[name]
+    if len(data) - TLM_HEADER.size != struct.calcsize(fmt):
+        raise ValueError(f"{name}: {len(data) - TLM_HEADER.size}-byte payload, expected {struct.calcsize(fmt)} "
+                         f"(flight and ground software built from different ICD versions?)")
     values = struct.unpack(fmt, data[TLM_HEADER.size:])
     header = {"seq": seq & 0x3FFF, "seconds": seconds, "subseconds": subseconds}
     return name, header, dict(zip(names, values))
@@ -496,6 +540,8 @@ OUTPUTS = {
     "ground/flatsat_icd.py": gen_python,
     "nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_TLM.txt": gen_cosmos_tlm,
     "nos3/components/hil_bridge/gsw/FLATSAT/cmd_tlm/FLATSAT_CMD.txt": gen_cosmos_cmd,
+    "nos3/components/hil_bridge/gsw/FLATSAT_RF/cmd_tlm/FLATSAT_RF_TLM.txt": lambda icd: gen_cosmos_tlm(icd, "FLATSAT_RF"),
+    "nos3/components/hil_bridge/gsw/FLATSAT_RF/cmd_tlm/FLATSAT_RF_CMD.txt": lambda icd: gen_cosmos_cmd(icd, "FLATSAT_RF"),
     "docs/icd/ICD_layouts.md": gen_markdown,
 }
 

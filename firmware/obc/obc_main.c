@@ -26,7 +26,12 @@ static int link_was_up;
 
 static void on_command(const uint8_t *pkt, size_t len)
 {
-    obc_cmd_enqueue(pkt, len);
+    obc_cmd_enqueue(pkt, len, OBC_CMD_SRC_UMB);
+}
+
+static void on_rf_frame(const uint8_t *frame, size_t len, int16_t rssi, int8_t snr)
+{
+    obc_comms_on_rx(frame, len, rssi, snr);
 }
 
 static void on_time(fs_time_t sim_time)
@@ -58,6 +63,11 @@ static void task_heartbeat(void)
 static void task_sensors(void)
 {
     obc_sensors_acquire();
+}
+
+static void task_comms(void)
+{
+    obc_comms_task();
 }
 
 static void task_adcs(void)
@@ -99,12 +109,13 @@ static fs_task_t tasks[] = {
     {.name = "can_fast", .period_ms = 100, .offset_ms = 40, .fn = task_can_fast},
     {.name = "can_slow", .period_ms = 1000, .offset_ms = 60, .fn = task_can_slow},
     {.name = "adcs", .period_ms = 200, .offset_ms = 70, .fn = task_adcs},
+    {.name = "comms", .period_ms = 100, .offset_ms = 90, .fn = task_comms},
     {.name = "adcs_auto", .period_ms = 1000, .offset_ms = 180, .fn = task_adcs_auto},
 };
 
 int main(int argc, char **argv)
 {
-    fs_umb_handlers_t handlers = {.on_command = on_command, .on_time = on_time};
+    fs_umb_handlers_t handlers = {.on_command = on_command, .on_time = on_time, .on_rf_frame = on_rf_frame};
     fs_time_t         epoch    = {MISSION_EPOCH_S, 0};
 
     if (fs_hal_init(argc, argv) != 0)
@@ -123,6 +134,7 @@ int main(int argc, char **argv)
     obc_tlm_init();
     obc_sensors_init();
     obc_adcs_init();
+    obc_comms_init();
     obc_can_init();
     fs_sched_init(tasks, sizeof(tasks) / sizeof(tasks[0]));
 

@@ -130,11 +130,18 @@ fi
 log "simulation running"
 
 BRIDGE_ARGS=""
+TRUTH_DESTS="127.0.0.1:9032 127.0.0.1:5112" # ground station software, SIL tests and tools (ICD 3.6)
+GS_COSMOS=cosmos
 if [ -n "${SIL_GROUND_HOST:-}" ]; then
     BRIDGE_ARGS="--umb-host $SIL_GROUND_HOST"
-    # 42 truth is sent to this container (readiness check above); pass it on to the ground segment
-    python3 "$ROOT/sil/truth_relay.py" "$SIL_GROUND_HOST" > "$SIL_LOG_DIR/truth-relay.log" 2>&1 &
+    TRUTH_DESTS="$TRUTH_DESTS $SIL_GROUND_HOST:5111"
+    GS_COSMOS=$SIL_GROUND_HOST
 fi
+# 42 truth reaches this container (readiness check above); the relay passes it on to everyone who needs it
+python3 "$ROOT/sil/truth_relay.py" $TRUTH_DESTS > "$SIL_LOG_DIR/truth-relay.log" 2>&1 &
+
+# Ground station software and RF link emulator (ICD 7.4); SIL_GS_ARGS e.g. "--mode always"
+python3 "$ROOT/ground/flatsat_gs.py" --cosmos-host "$GS_COSMOS" ${SIL_GS_ARGS:-} > "$SIL_LOG_DIR/gs.log" 2>&1 &
 
 if [ "${SIL_NO_BRIDGE:-0}" != "1" ]; then
     # The bridge attaches once the command has created the umbilical pty

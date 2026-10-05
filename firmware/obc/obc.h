@@ -79,6 +79,23 @@ typedef struct
     float   manual_rw_speed[DEV_NUM_RW]; /* rad/s */
 } obc_adcs_t;
 
+/* RF link state (obc_comms.c), reported in COMMS_STATS */
+typedef struct
+{
+    uint32_t tx_frames;
+    uint32_t rx_frames;
+    uint16_t crc_errors;
+    uint16_t rejected;
+    int16_t  last_rssi; /* dBm */
+    int8_t   last_snr;  /* 0.25 dB */
+    uint8_t  contact;
+    uint16_t duty_permil; /* airtime in the last hour, 0.1 % */
+    uint16_t queue_depth;
+    uint16_t queue_drops;
+    uint16_t beacon_period_s;
+    int8_t   tx_power_dbm;
+} obc_comms_t;
+
 typedef struct
 {
     /* Mode */
@@ -118,6 +135,9 @@ typedef struct
     obc_eps_real_t   eps_real;
     obc_phys_wheel_t phys_wheel;
 
+    /* RF link */
+    obc_comms_t comms;
+
     /* Attitude control, and its tuning (ADCS_SET_* commands) */
     obc_adcs_t adcs;
     float      bdot_gain;
@@ -151,7 +171,8 @@ typedef enum
     EVT_NODE_FAULT,
     EVT_NODE_ACK,
     EVT_WHEEL_FAULT,
-    EVT_ADCS
+    EVT_ADCS,
+    EVT_COMMS
 } obc_event_id_t;
 
 void obc_event(uint16_t id, uint8_t severity, const char *fmt, ...) __attribute__((format(printf, 3, 4)));
@@ -165,9 +186,13 @@ const char *obc_mode_name(uint8_t mode);
 
 /* ---- Commands (ICD 5) ---- */
 
+/* Where a command arrived from: replies go back the same way */
+#define OBC_CMD_SRC_UMB 0
+#define OBC_CMD_SRC_RF  1
+
 void obc_cmd_init(void);
-/* Queue a received command packet (called from the umbilical handler; no bus access allowed there) */
-void obc_cmd_enqueue(const uint8_t *pkt, size_t len);
+/* Queue a received command packet (called from receive handlers; no bus access allowed there) */
+void obc_cmd_enqueue(const uint8_t *pkt, size_t len, uint8_t source);
 /* Validate and execute queued commands */
 void obc_cmd_process(void);
 
@@ -180,7 +205,9 @@ void obc_tlm_service(void);
 int obc_tlm_set_period(uint16_t mid, uint16_t period_ms);
 /* Builds and sends one packet now */
 void obc_tlm_send_now(uint16_t mid);
-void obc_tlm_send_ping_reply(uint32_t token, fs_time_t rx_time);
+/* Builds a periodic packet (any MID in the telemetry table) into pkt; returns its length, 0 if unknown */
+size_t obc_tlm_build(uint16_t mid, uint8_t *pkt, size_t max);
+void obc_tlm_send_ping_reply(uint32_t token, fs_time_t rx_time, uint8_t source);
 /* Sends an already-built packet on every available downlink */
 void obc_tlm_send_packet(const uint8_t *pkt, size_t len);
 
@@ -193,6 +220,17 @@ void    obc_can_task_slow(void); /* 1 Hz: HEARTBEAT, TIME_SYNC, MODE, node monit
 uint8_t obc_can_alive_mask(void);
 int     obc_can_switch(uint8_t sw, uint8_t on);
 int     obc_can_node_command(uint8_t node, uint8_t cmd);
+
+/* ---- RF link (obc_comms.c, ICD 7) ---- */
+
+void obc_comms_init(void);
+void obc_comms_task(void); /* 10 Hz: beacon, queued downlink, airtime budget */
+/* A received RF frame (called from the umbilical receive handler: no bus access) */
+void obc_comms_on_rx(const uint8_t *frame, size_t len, int16_t rssi, int8_t snr);
+/* Queue a packet for the next contact; returns 0 if it can't be sent over RF */
+int obc_comms_queue(const uint8_t *pkt, size_t len);
+int obc_comms_set_beacon_period(uint16_t seconds); /* 0 = off, else 5..3600 */
+int obc_comms_set_tx_power(int8_t dbm);
 
 /* ---- ADCS (obc_adcs.c, docs/design/ADCS_DESIGN.md) ---- */
 

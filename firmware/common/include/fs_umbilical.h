@@ -34,7 +34,8 @@ extern "C" {
 typedef struct
 {
     void (*on_command)(const uint8_t *pkt, size_t len);  /* CI_PKT: umbilical telecommand */
-    void (*on_rf_frame)(const uint8_t *frame, size_t len); /* RF_RX: frame from the link emulator */
+    /* RF_RX: frame from the link emulator, with the RSSI (dBm) and SNR (0.25 dB) of the simulated link */
+    void (*on_rf_frame)(const uint8_t *frame, size_t len, int16_t rssi, int8_t snr);
     void (*on_time)(fs_time_t sim_time);                   /* TIME: NOS3 simulation time */
 } fs_umb_handlers_t;
 

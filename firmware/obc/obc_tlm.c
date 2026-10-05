@@ -53,7 +53,7 @@ static void build_obc_hk(void *p)
     t->cpu_load         = fs_sched_cpu_load();
     t->node_alive_mask  = obc_can_alive_mask();
     t->time_source      = fs_time_source();
-    t->link_flags       = fs_umb_link_up() ? 0x01 : 0x00;
+    t->link_flags       = (uint8_t)((fs_umb_link_up() ? 0x01 : 0x00) | (obc.comms.contact ? 0x02 : 0x00));
     t->can_tx_count     = fs_can_stats()->tx;
     t->can_rx_count     = fs_can_stats()->rx;
     t->can_error_count  = (uint16_t)(fs_can_stats()->tx_errors + fs_can_stats()->rx_errors);
@@ -177,8 +177,20 @@ static void build_comms_stats(void *p)
     flatsat_comms_stats_t *t = p;
     const fs_umb_stats_t  *u = fs_umb_stats();
 
-    t->umb_tx_packets = u->tx_frames;
-    t->umb_rx_packets = u->rx_frames;
+    t->umb_tx_packets  = u->tx_frames;
+    t->umb_rx_packets  = u->rx_frames;
+    t->rf_tx_frames    = obc.comms.tx_frames;
+    t->rf_rx_frames    = obc.comms.rx_frames;
+    t->rf_crc_errors   = obc.comms.crc_errors;
+    t->rf_rejected     = obc.comms.rejected;
+    t->last_rssi       = obc.comms.last_rssi;
+    t->last_snr        = obc.comms.last_snr;
+    t->contact         = obc.comms.contact;
+    t->duty_cycle      = obc.comms.duty_permil;
+    t->tx_queue_depth  = obc.comms.queue_depth;
+    t->tx_queue_drops  = obc.comms.queue_drops;
+    t->beacon_period   = obc.comms.beacon_period_s;
+    t->tx_power        = obc.comms.tx_power_dbm;
 }
 
 /* Default umbilical rates (ICD 4) */
@@ -197,20 +209,39 @@ static tlm_entry_t table[] = {
 /* Largest periodic payload, for the build buffer */
 #define MAX_PAYLOAD sizeof(flatsat_adcs_sensors_t)
 
-static void send_entry(tlm_entry_t *e)
+static size_t build_entry(const tlm_entry_t *e, uint8_t *pkt, size_t max)
 {
     uint8_t   payload[MAX_PAYLOAD];
-    uint8_t   pkt[FLATSAT_TLM_HDR_LEN + MAX_PAYLOAD];
     fs_time_t now = fs_time_now();
-    size_t    n;
 
     memset(payload, 0, sizeof(payload));
     e->build(payload);
-    n = fs_tlm_build(pkt, sizeof(pkt), e->mid, now.seconds, now.subseconds, payload, e->payload_len);
+    return fs_tlm_build(pkt, max, e->mid, now.seconds, now.subseconds, payload, e->payload_len);
+}
+
+static void send_entry(tlm_entry_t *e)
+{
+    uint8_t pkt[FLATSAT_TLM_HDR_LEN + MAX_PAYLOAD];
+    size_t  n = build_entry(e, pkt, sizeof(pkt));
+
     if (n > 0)
     {
         obc_tlm_send_packet(pkt, n);
     }
+}
+
+size_t obc_tlm_build(uint16_t mid, uint8_t *pkt, size_t max)
+{
+    unsigned i;
+
+    for (i = 0; i < TABLE_LEN; i++)
+    {
+        if (table[i].mid == mid)
+        {
+            return build_entry(&table[i], pkt, max);
+        }
+    }
+    return 0;
 }
 
 void obc_tlm_init(void)
@@ -291,7 +322,7 @@ void obc_tlm_send_now(uint16_t mid)
     }
 }
 
-void obc_tlm_send_ping_reply(uint32_t token, fs_time_t rx_time)
+void obc_tlm_send_ping_reply(uint32_t token, fs_time_t rx_time, uint8_t source)
 {
     flatsat_ping_reply_t r;
     uint8_t              pkt[FLATSAT_PING_REPLY_LEN];
@@ -306,6 +337,10 @@ void obc_tlm_send_ping_reply(uint32_t token, fs_time_t rx_time)
     if (n > 0)
     {
         obc_tlm_send_packet(pkt, n);
+        if (source == OBC_CMD_SRC_RF)
+        {
+            obc_comms_queue(pkt, n); /* a ping over RF measures the RF round trip */
+        }
     }
 }
 

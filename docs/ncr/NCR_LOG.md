@@ -16,6 +16,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-010](#ncr-010) | 2026-10-05 | 42 applies corrupted wheel torque commands | Critical | Closed |
 | [NCR-011](#ncr-011) | 2026-10-05 | Bridge answers "bus busy" to back-to-back transactions; converged event repeats | Minor | Closed |
 | [NCR-012](#ncr-012) | 2026-10-05 | 42 stopped advancing 14 s into one COSMOS end-to-end run | Major | Open |
+| [NCR-013](#ncr-013) | 2026-10-05 | One lost hail drops the spacecraft out of contact | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -329,4 +330,25 @@ So 42 itself stopped advancing, or started sending corrupt output, with no input
 The first version watched 42's `time.42` output file and raised false alarms in an operator session. 42 writes its output files in buffered chunks a couple of minutes apart, so between chunks the file looked frozen.
 
 **Next.** On recurrence: check whether 42 is alive and where it is blocked (`42-stall.txt`, then `gdb -p` or `/proc/<pid>/stack`), and whether it coincides with COSMOS and the SIL starting together. One candidate is CPU starvation at start-up; another is a blocking write on one of 42's TX sockets.
+
+---
+
+## NCR-013
+
+**One lost hail drops the spacecraft out of contact**
+
+| | |
+|---|---|
+| Found by | RF link system test (`tests/system/test_rf_link.py`), first run |
+| Item | OBC RF link, `firmware/obc/obc_comms.c` (contact rule, ICD 7.3) |
+| Severity | Minor: in a pass with any frame loss the OBC would keep reporting contact lost and regained, stopping its queued downlink each time |
+| Status | Closed 2026-10-05 |
+
+**Observation.** During the corrupted-frame and frame-loss checks, the OBC raised `RF contact lost` and then `RF contact: ground station heard` again, although the ground station stayed in contact the whole time.
+
+**Root cause.** The ground station hails every 20 s, and the OBC counted itself in contact for 30 s after the last valid frame. If one hail is lost (to a corrupted CRC or to link loss), the next valid frame arrives 40 s after the last one, so the OBC timed out. With the link model's ~10 % loss near the elevation mask, that would happen on most passes.
+
+**Fix.** The contact timeout is now 45 s: one lost hail is tolerated, two are not. The trade-off is that a real loss of signal takes up to 45 s to notice on board.
+
+**Verification.** `test_rf_link.py` 9/9, with no spurious contact changes under 50 % loss. In `test_rf_pass.py` the OBC notices LOS 39 s after the ground station.
 

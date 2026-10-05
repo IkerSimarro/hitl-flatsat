@@ -4,7 +4,7 @@
 ** Run inside the SIL environment:
 **   sil/sil.sh firmware/build/test_devices --umb-pty '$SIL_UMB_PTY' --can none
 **
-** Each driver reading is compared with 42's truth data (the truth42sim stream on UDP 5111), using the
+** Each driver reading is compared with 42's truth data (the truth42sim stream, relayed to UDP 5112), using the
 ** sensor mounting in cfg/InOut/SC_NOS3.txt: gyros, magnetometers, wheels and torquers along the body
 ** axes, coarse sun sensors facing +X -X +Y -Y +Z -Z. Tolerances allow for the sensor noise and
 ** quantisation configured there and for the time between the truth sample and the reading.
@@ -67,11 +67,11 @@ static void truth_open(void)
     truth_fd = socket(AF_INET, SOCK_DGRAM, 0);
     memset(&a, 0, sizeof(a));
     a.sin_family      = AF_INET;
-    a.sin_port        = htons(5111);
+    a.sin_port        = htons(5112); /* the SIL truth relay's port for tests (ICD 3.6) */
     a.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(truth_fd, (struct sockaddr *)&a, sizeof(a)) != 0)
     {
-        perror("bind 5111");
+        perror("bind 5112");
     }
     fcntl(truth_fd, F_SETFL, O_NONBLOCK);
 }
@@ -479,7 +479,7 @@ int main(int argc, char **argv)
         {
             service(100);
         }
-        result(truth.valid, "42 truth stream", truth.valid ? "receiving" : "no truth data on UDP 5111");
+        result(truth.valid, "42 truth stream", truth.valid ? "receiving" : "no truth data on UDP 5112");
     }
     test_imu();
     test_mag();

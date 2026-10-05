@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Print 42 truth packets (truth42sim UDP stream, port 5111) for debugging."""
+"""Print 42 truth packets for debugging (inside the SIL: the truth relay's port 5112; standalone: 5111)."""
 import socket, struct, sys, time
 names = ["pos_n", "vel_n", "svb", "bvb", "hvb", "wn", "qn", "pos_w", "vel_w", "acc_b", "gyro_b", "rw_h"]
 sizes = [3, 3, 3, 3, 3, 3, 4, 3, 3, 3, 3, 3]
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-s.bind(("0.0.0.0", 5111))
+s.bind(("0.0.0.0", int(sys.argv[2]) if len(sys.argv) > 2 else 5112))
 for n in range(int(sys.argv[1]) if len(sys.argv) > 1 else 1):
     d = s.recv(1024)
     y, doy, mo, day, hh, mm = struct.unpack(">6h", d[:12])

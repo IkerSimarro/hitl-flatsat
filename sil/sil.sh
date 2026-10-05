@@ -18,7 +18,8 @@
 #   SIL_TTY=0           don't allocate a terminal even when run from one
 #   SIL_DOCKER_ARGS     extra docker run arguments
 #   SIL_GRAPHICS=1      open 42's 3D view (also pass DISPLAY and the X11 socket in SIL_DOCKER_ARGS)
-#   SIL_INIT_RATES      initial body rates in deg/s, e.g. "2 -3 4" (default: 42's configuration, at rest)
+#   SIL_INIT_RATES      initial body rates in deg/s, e.g. "2 -3 4" (default: NOS3's 2.8 deg/s deployment tip-off)
+#   SIL_GS_ARGS         ground station options (ground/flatsat_gs.py), e.g. "--mode always" or "--loss 0.1"
 #
 set -u
 
@@ -38,8 +39,10 @@ fi
 LOCAL_HOSTS="nos-engine-server sc01-nos-engine-server fortytwo trq-sim radio-sim cryptolib cosmos"
 GROUND_HOST=""
 if [ -n "${SIL_NETWORK:-}" ]; then
-    DOCKER_FLAGS="$DOCKER_FLAGS --network $SIL_NETWORK --network-alias nos-fsw --network-alias truth42sim -h nos-fsw"
+    DOCKER_FLAGS="$DOCKER_FLAGS --network $SIL_NETWORK --network-alias nos-fsw --network-alias truth42sim"
+    DOCKER_FLAGS="$DOCKER_FLAGS --network-alias flatsat-gs -h nos-fsw"
     GROUND_HOST=flatsat-cosmos
+    LOCAL_HOSTS="$LOCAL_HOSTS flatsat-gs"
 else
     LOCAL_HOSTS="$LOCAL_HOSTS nos-fsw flatsat-gs"
 fi
@@ -57,5 +60,5 @@ DOCKER_FLAGS="$DOCKER_FLAGS --cap-add NET_ADMIN"
 exec docker run $DOCKER_FLAGS ${SIL_DOCKER_ARGS:-} \
     -v "$ROOT:$ROOT" -v "$HOME/.nos3:$HOME/.nos3" -w "$ROOT" \
     -e SIL_LOG_DIR="${SIL_LOG_DIR:-$ROOT/sil/logs/$(date +%Y%m%d-%H%M%S)}" -e SIL_GROUND_HOST="$GROUND_HOST" \
-    -e SIL_GRAPHICS="${SIL_GRAPHICS:-0}" -e SIL_INIT_RATES="${SIL_INIT_RATES:-}" \
+    -e SIL_GRAPHICS="${SIL_GRAPHICS:-0}" -e SIL_INIT_RATES="${SIL_INIT_RATES:-}" -e SIL_GS_ARGS="${SIL_GS_ARGS:-}" \
     "$DBOX" "$ROOT/sil/sil_env.sh" bash -c "$*"

@@ -38,5 +38,6 @@ void obc_event(uint16_t id, uint8_t severity, const char *fmt, ...)
     if (n > 0)
     {
         obc_tlm_send_packet(pkt, n);
+        obc_comms_queue(pkt, n); /* events go down in the next contact (ICD 4) */
     }
 }

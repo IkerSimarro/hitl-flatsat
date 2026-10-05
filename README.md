@@ -20,11 +20,11 @@ A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, 
 |---|---|
 | `nos3/` | Submodule: [fork of NOS3](https://github.com/IkerSimarro/nos3) (`hitl` branch). Adds the HIL bridge component (`components/hil_bridge`) and the `HIL=1` launch mode. |
 | `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `obc/`: flight computer software (commands, modes, events, telemetry, sensor acquisition, attitude control); `obc/adcs/`: ADCS control laws (B-dot, sun pointing, momentum management); `obc/devices/`: drivers for the NOS3-simulated sensors and actuators; `nodes/adcs/`: reaction wheel speed control node; `nodes/eps/`: power monitoring and load switch node; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN, shared-memory plant harness); `sil_plant/`: plant model of the physical FlatSat (wheel motor, 18650 cell, charger, rails); `tests/`: unit tests on a fake HAL and the SIL device test. Pico backend *(planned)*. |
-| `ground/` | Ground station software *(planned)*; generated Python codec `flatsat_icd.py`. The COSMOS target is generated into the NOS3 fork (`nos3/components/hil_bridge/gsw/FLATSAT`). |
+| `ground/` | Ground station software (`flatsat_gs.py`): contact windows and pass prediction from 42's orbit, an RF link emulator with a flight-like link budget, and a telecommand queue. Also the RF frame code (`flatsat_rf.py`) and the generated Python codec (`flatsat_icd.py`). The COSMOS targets `FLATSAT` (umbilical) and `FLATSAT_RF` (radio), with their screens, are generated into the NOS3 fork (`nos3/components/hil_bridge/gsw/`). |
 | `sil/` | Software-in-the-loop environment: NOS3 simulators, 42 and the HIL bridge in one container (`sil/sil.sh`), the plant model and CAN nodes (`sil/start_nodes.sh`), and the one-command launcher (`sil/launch.sh`) |
 | `tests/` | Unit tests, COSMOS definition cross-check and headless COSMOS end-to-end test (`tests/cosmos/`), system tests (`tests/system/`), the regression campaign (`tests/run_all.sh`); test procedures *(planned)* |
 | `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft) with generated [byte layouts](docs/icd/ICD_layouts.md); [ADCS design note](docs/design/ADCS_DESIGN.md); [non-conformance log](docs/ncr/NCR_LOG.md); test plan and reports *(planned)* |
-| `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml` |
+| `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml`. `capture_screens.sh`: screenshots of the COSMOS screens with live data. |
 | `hardware/` | [Bill of materials](hardware/BOM.md); wiring diagram and harness definition *(planned)* |
 
 ## Getting started
@@ -50,23 +50,30 @@ sil/launch.sh --headless    # the same without windows
 
 The spacecraft starts with NOS3's deployment tip-off (2.8°/s). The flight computer detects it, detumbles with the magnetorquers, and then points +X at the Sun with the reaction wheels, all on its own; the physical wheel on the ADCS node mirrors simulated wheel 0. See the [ADCS design note](docs/design/ADCS_DESIGN.md).
 
-In COSMOS, accept the agreement, start the **Command and Telemetry Server**, then use **Packet Viewer** (target `FLATSAT`) to watch telemetry and **Command Sender** to send commands such as `OBC_NOOP` or `OBC_SET_MODE`. Ctrl-C in the terminal stops everything.
+The flight computer also talks to a ground station over a simulated LoRa radio link. The ground station is at ESA's ESAC near Madrid, and the first pass begins about 19 minutes after start. Between passes, the spacecraft's events and the ground's commands wait in queues, as on a real mission.
+
+In COSMOS, accept the agreement and start the **Command and Telemetry Server** (keep it open). Then open:
+- **Telemetry Viewer**, for the dashboards: *FLATSAT OVERVIEW* (everything over the umbilical) and *FLATSAT_RF GROUND_STATION* (what arrives over the radio, with the pass geometry, the link and the next pass);
+- **Packet Viewer**, for every packet;
+- **Command Sender**, for commands, which go through the umbilical (target `FLATSAT`) or the radio (target `FLATSAT_RF`).
+
+Ctrl-C in the terminal stops everything. To put the ground station elsewhere, set `SIL_GS_ARGS` (for example `"--lat 37.9402 --lon -75.4664"` for NASA Wallops, with a pass about 4 minutes in). Or use the screen's contact buttons.
 
 See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.md) for the bridge protocol and the end-to-end test.
 
 ### Tests
 
 ```bash
-tests/run_all.sh            # every stage below, with a summary table (about 20 minutes)
+tests/run_all.sh            # every stage below, with a summary table (about 35 minutes)
 ```
 
 The stages one by one:
 
 ```bash
-# Interface definitions: generated files up to date, codec unit tests, COSMOS cross-check
+# Interface definitions: generated files up to date, codec and RF unit tests, COSMOS cross-check and screens
 python3 tools/icd_gen.py --check
 python3 -m unittest discover -s tests/unit
-tests/cosmos/check_defs.sh
+tests/cosmos/check_defs.sh && python3 tests/cosmos/check_screens.py
 
 # Firmware unit tests (in the NOS3 build image)
 docker run --rm -v $PWD:$PWD -w $PWD ivvitc/nos3-64:20260619 bash -c \
@@ -87,6 +94,14 @@ sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $
 
 # Sensor fault injection through NOS3's command bus: persistence filtering and per-bus isolation
 sil/sil.sh tests/system/test_fault_persistence.sh
+
+# The RF link through the ground station: store and forward, telecommands, corrupted frames, loss, LOS (about 4 minutes)
+SIL_GS_ARGS="--mode never --seed 1" sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+            python3 tests/system/test_rf_link.py'
+
+# A real pass over NASA Wallops, from 42's orbit: prediction vs reality, link budget (about 12 minutes)
+SIL_GS_ARGS="--lat 37.9402 --lon -75.4664 --alt 10 --seed 1" sil/sil.sh 'sil/start_nodes.sh &&
+            (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_rf_pass.py'
 
 # Attitude control in the loop with 42, from a tumble, checked against 42's truth (about 8 minutes)
 SIL_INIT_RATES="2 -3 4" sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&

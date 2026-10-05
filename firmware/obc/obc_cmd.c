@@ -24,9 +24,11 @@ typedef struct
     uint8_t   data[CMD_MAX_LEN];
     size_t    len;
     fs_time_t rx_time;
+    uint8_t   source; /* OBC_CMD_SRC_* */
 } queued_cmd_t;
 
 static queued_cmd_t queue[CMD_QUEUE_LEN];
+static uint8_t      current_source = OBC_CMD_SRC_UMB;
 static unsigned     q_head;
 static unsigned     q_tail;
 
@@ -47,7 +49,7 @@ void obc_cmd_init(void)
     q_head = q_tail = 0;
 }
 
-void obc_cmd_enqueue(const uint8_t *pkt, size_t len)
+void obc_cmd_enqueue(const uint8_t *pkt, size_t len, uint8_t source)
 {
     unsigned next = (q_head + 1) % CMD_QUEUE_LEN;
 
@@ -60,6 +62,7 @@ void obc_cmd_enqueue(const uint8_t *pkt, size_t len)
     memcpy(queue[q_head].data, pkt, len);
     queue[q_head].len     = len;
     queue[q_head].rx_time = fs_time_now();
+    queue[q_head].source  = source;
     q_head                = next;
 }
 
@@ -67,12 +70,6 @@ static void reject(uint16_t mid, uint8_t fc, const char *why)
 {
     obc.cmd_reject_count++;
     obc_event(EVT_CMD_REJECTED, FLATSAT_SEVERITY_ERROR, "command MID 0x%04X FC %u rejected: %s", mid, fc, why);
-}
-
-static void not_implemented(const char *name)
-{
-    obc.cmd_reject_count++;
-    obc_event(EVT_CMD_NOT_IMPLEMENTED, FLATSAT_SEVERITY_WARNING, "%s not implemented yet", name);
 }
 
 static void accept(const fs_cmd_t *cmd)
@@ -132,7 +129,7 @@ static void exec_obc(const fs_cmd_t *cmd, fs_time_t rx_time)
         {
             ARGS(flatsat_obc_ping_t, cmd, a);
             accept(cmd);
-            obc_tlm_send_ping_reply(a.token, rx_time);
+            obc_tlm_send_ping_reply(a.token, rx_time, current_source);
             break;
         }
 
@@ -152,8 +149,18 @@ static void exec_obc(const fs_cmd_t *cmd, fs_time_t rx_time)
         }
 
         case FLATSAT_OBC_DOWNLINK_PACKET_FC:
-            not_implemented("OBC_DOWNLINK_PACKET (RF link, Phase 2)");
+        {
+            ARGS(flatsat_obc_downlink_packet_t, cmd, a);
+            uint8_t pkt[FLATSAT_RF_MAX_PACKET];
+            size_t  n = obc_tlm_build(a.tlm_mid, pkt, sizeof(pkt));
+            if (n == 0 || !obc_comms_queue(pkt, n))
+            {
+                reject(cmd->mid, cmd->fc, "not a telemetry packet that fits an RF frame");
+                break;
+            }
+            accept(cmd);
             break;
+        }
 
         case FLATSAT_OBC_NODE_RESET_FC:
         {
@@ -356,14 +363,41 @@ static void exec_eps(const fs_cmd_t *cmd)
 
 static void exec_comms(const fs_cmd_t *cmd)
 {
-    if (cmd->fc == FLATSAT_COMMS_NOOP_FC)
+    switch (cmd->fc)
     {
-        accept(cmd);
-        obc_event(EVT_CMD_NOOP, FLATSAT_SEVERITY_INFO, "COMMS NOOP received");
-    }
-    else
-    {
-        not_implemented("COMMS settings (RF link, Phase 2)");
+        case FLATSAT_COMMS_NOOP_FC:
+            accept(cmd);
+            obc_event(EVT_CMD_NOOP, FLATSAT_SEVERITY_INFO, "COMMS NOOP received via %s",
+                      current_source == OBC_CMD_SRC_RF ? "RF" : "umbilical");
+            break;
+
+        case FLATSAT_COMMS_SET_TX_POWER_FC:
+        {
+            ARGS(flatsat_comms_set_tx_power_t, cmd, a);
+            if (!obc_comms_set_tx_power(a.power))
+            {
+                reject(cmd->mid, cmd->fc, "TX power outside -9..22 dBm");
+                break;
+            }
+            accept(cmd);
+            break;
+        }
+
+        case FLATSAT_COMMS_SET_BEACON_PERIOD_FC:
+        {
+            ARGS(flatsat_comms_set_beacon_period_t, cmd, a);
+            if (!obc_comms_set_beacon_period(a.period))
+            {
+                reject(cmd->mid, cmd->fc, "beacon period must be 0 (off) or 5..3600 s");
+                break;
+            }
+            accept(cmd);
+            break;
+        }
+
+        default:
+            reject(cmd->mid, cmd->fc, "unknown function code");
+            break;
     }
 }
 
@@ -427,6 +461,8 @@ void obc_cmd_process(void)
         /* Copy out before freeing the slot: executing a command services the umbilical, which can queue more */
         queued_cmd_t c = queue[q_tail];
         q_tail         = (q_tail + 1) % CMD_QUEUE_LEN;
+        current_source = c.source;
         execute(c.data, c.len, c.rx_time);
+        current_source = OBC_CMD_SRC_UMB;
     }
 }

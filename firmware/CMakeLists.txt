@@ -20,6 +20,7 @@ add_library(fs_common STATIC
     common/src/fs_persist.c
     common/src/fs_can.c
     common/src/fs_node.c
+    common/src/fs_rf.c
     ${HIL_PROTOCOL_DIR}/hil_link.c
 )
 target_include_directories(fs_common PUBLIC common/include ${HIL_PROTOCOL_DIR})
@@ -36,6 +37,7 @@ add_library(obc_devices STATIC
     obc/devices/dev_rw.c
     obc/devices/dev_eps.c
     obc/devices/dev_trq.c
+    obc/devices/dev_radio.c
 )
 target_include_directories(obc_devices PUBLIC obc/devices)
 target_link_libraries(obc_devices PUBLIC fs_common)
@@ -85,6 +87,7 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
         obc/obc_tlm.c
         obc/obc_can.c
         obc/obc_adcs.c
+        obc/obc_comms.c
     )
     target_include_directories(obc PRIVATE obc)
     target_link_libraries(obc obc_devices adcs_law fs_common fs_hal m)

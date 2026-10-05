@@ -52,11 +52,30 @@ end
 
 step('42 truth reaching COSMOS (SIM_42_TRUTH)') { wait_check('SIM_42_TRUTH SIM_42_TRUTH_DATA YEAR == 2025', 10) }
 
+# The radio path: COSMOS target FLATSAT_RF through the ground station software (FlatSat ICD 7)
+step('ground station status on FLATSAT_RF') { wait_check('FLATSAT_RF GS_STATUS RANGE > 0', 15) }
+
+step('contact from COSMOS: beacon over the radio') do
+  cmd("FLATSAT_RF GS_SET_CONTACT_MODE with MODE 'ALWAYS', ON_TIME 0, OFF_TIME 0")
+  wait_check('FLATSAT_RF GS_STATUS CONTACT == 1', 5)
+  wait_check('FLATSAT_RF BEACON UPTIME > 0', 15)
+end
+
+step('command over the radio, confirmed in the next beacon') do
+  count = tlm('FLATSAT OBC_HK CMD_ACCEPT_COUNT')
+  cmd('FLATSAT_RF COMMS_NOOP')
+  wait_check("FLATSAT OBC_HK CMD_ACCEPT_COUNT == #{count + 1}", 10)
+  wait_check("FLATSAT_RF BEACON CMD_ACCEPT_COUNT == #{count + 1}", 20)
+end
+
 # Show what an operator would see
-rates = (0..2).map { |i| (tlm("FLATSAT ADCS_SENSORS IMU_RATE_#{i}") * 180 / Math::PI).round(3) }
+rates = (0..2).map { |i| tlm("FLATSAT ADCS_SENSORS IMU_RATE_#{i}").round(3) } # shown in deg/s
 field = (0..2).map { |i| (tlm("FLATSAT ADCS_SENSORS MAG_#{i}") * 1e6).round(2) }
 puts "     body rate #{rates} deg/s, magnetic field #{field} uT, " \
      "simulated battery #{tlm('FLATSAT EPS_SIM BATT_V').round(2)} V, uptime #{tlm('FLATSAT OBC_HK UPTIME')} s"
+puts "     ground station: elevation #{tlm('FLATSAT_RF GS_STATUS ELEVATION').round(1)} deg, " \
+     "next pass in #{(tlm('FLATSAT_RF GS_STATUS NEXT_AOS') / 60.0).round(1)} min, " \
+     "#{tlm('FLATSAT_RF GS_STATUS DOWN_FRAMES')} frames received"
 
 passed = $results.count(true)
 puts "---- #{passed} passed, #{$results.size - passed} failed ----"

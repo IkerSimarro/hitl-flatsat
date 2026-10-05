@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT / "ground"))
 import flatsat_icd as icd  # noqa: E402
 
 DEG = math.pi / 180
-TRUTH_PORT = 5111
+TRUTH_PORT = 5112  # the SIL truth relay's port for tests (ICD 3.6)
 TRUTH_FIELDS = [("pos_n", 3), ("vel_n", 3), ("svb", 3), ("bvb", 3), ("hvb", 3), ("wn", 3), ("qn", 4),
                 ("pos_w", 3), ("vel_w", 3), ("acc_b", 3), ("gyro_b", 3), ("rw_h", 3)]
 

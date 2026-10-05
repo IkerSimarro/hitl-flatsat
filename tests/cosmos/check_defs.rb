@@ -26,7 +26,9 @@ File.readlines(packets_file).each do |line|
     failures << "#{name}: not identified by its MID" unless p.identify?(bytes)
     failures << "#{name}: length #{bytes.length} != defined #{p.defined_length}" if bytes.length != p.defined_length
     expected.each do |item, value|
-      got = p.read(item)
+      # State names compare as COSMOS shows them; numbers as on the wire (display conversions such as
+      # rad -> deg don't apply)
+      got = value.is_a?(String) ? p.read(item) : p.read(item, :RAW)
       ok = value.is_a?(Float) ? (got - value).abs < 1e-6 : got == value
       failures << "#{name}.#{item}: COSMOS read #{got.inspect}, Python wrote #{value.inspect}" unless ok
     end
