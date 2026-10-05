@@ -14,6 +14,8 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-008](#ncr-008) | 2026-10-04 | OBC misses a node reboot in the node's first second | Minor | Closed |
 | [NCR-009](#ncr-009) | 2026-10-05 | B-dot detumble stalls above the hand-over rate in the loop with 42 | Major | Closed |
 | [NCR-010](#ncr-010) | 2026-10-05 | 42 applies corrupted wheel torque commands | Critical | Closed |
+| [NCR-011](#ncr-011) | 2026-10-05 | Bridge answers "bus busy" to back-to-back transactions; converged event repeats | Minor | Closed |
+| [NCR-012](#ncr-012) | 2026-10-05 | 42 stopped advancing 14 s into one COSMOS end-to-end run | Major | Open |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -270,4 +272,59 @@ Which corruption occurs depends on the lengths of the previous message strings. 
 - ADCS system test, 8/8. Sun pointing now settles to 0.03° with no overshoot; before the fix it held a 3–5° offset. After the IMU failure the body rate stays at 0.01°/s, where it previously jumped to 1.77°/s. See the [ADCS design note](../design/ADCS_DESIGN.md) §7.
 
 **Note.** This defect is in NOS3's version of 42, so it affects any NOS3 user whose simulators command 42's wheels. It is a candidate to report upstream (nasa-itc/42).
+
+---
+
+## NCR-011
+
+**Bridge answers "bus busy" to back-to-back transactions; the converged event repeats**
+
+| | |
+|---|---|
+| Found by | Operator run of `sil/launch.sh` with the GUIs (42 3D view, COSMOS) on the development laptop |
+| Item | HIL bridge `nos3/components/hil_bridge/sim/src/hil_bridge.c` (bus workers, NCR-006). OBC `firmware/obc/obc_adcs.c` and `obc_sensors.c`. |
+| Severity | Minor: no fault was declared and attitude control worked, but about 2 % of IMU reads were lost, and the console filled with repeated `sun pointing converged` events and miss messages |
+| Status | Closed 2026-10-05 |
+
+**Observation.** In a 13-minute run the terminal showed `IMU read missed (error -1)` every few seconds. Each miss was followed by another `sun pointing converged` event. The bridge log had 72 `bus busy: frame type 0x40 bus 0 answered BUS_ERROR` (IMU, CAN) and 5 for the fine sun sensor (SPI). The automated tests, which run without GUIs, had shown none of this.
+
+**Root cause.**
+1. *Bridge.* An IMU read is three CAN transactions in a row. A bus worker sent its reply and only then marked itself idle. The OBC answers instantly over the pty, so its next request could arrive in between. On a loaded machine the worker thread is often descheduled at exactly that point, and the bridge then rejected a perfectly sequential request as "busy". The log shows request 21 arriving before the worker had finished with request 20, whose reply had already gone out.
+2. *OBC.* On any missed read, sun pointing reset its pointing error and convergence. The next good read declared convergence again and raised the event again. B-dot similarly restarted its field derivative and zeroed the torquers for the cycle.
+
+**Fix.**
+1. A bus worker now builds its reply, marks itself idle, and then sends the reply.
+2. A single missed read now keeps the last actuator commands and state, applying NCR-005's persistence principle to the control loop. B-dot's derivative spans the time since the last good sample. The converged flag has hysteresis: it clears only at twice the convergence limits, or when the Sun is lost.
+3. Missed reads are logged as one summary line per minute instead of one line each.
+
+**Verification.**
+- The full regression campaign passes.
+- A 200 s run with a heavier load than the GUIs (six busy-loop processes on the 8-thread laptop) gave 5 `bus busy` answers, against 72 in 13 minutes before the fix.
+- The remaining missed reads, about 3 % at that load, were other late or failed replies. They appear as one summary line a minute, no fault was declared, and the spacecraft detumbled and handed over to sun pointing.
+
+---
+
+## NCR-012
+
+**42 stopped advancing 14 s into one COSMOS end-to-end run**
+
+| | |
+|---|---|
+| Found by | Regression campaign `tests/run_all.sh`, stage `e2e:cosmos`, 2026-10-05 14:06 |
+| Item | Test environment: 42 (patched for NCR-010), in the SIL container next to COSMOS |
+| Severity | Major: when it happens, every result after that point is invalid. It is intermittent and so far seen once. |
+| Status | Open: not reproduced, monitoring in place |
+
+**Observation.** The COSMOS check that all six sensors are valid failed: the IMU and coarse sun sensors weren't. COSMOS showed 42's truth body rate as ±22918°/s (400 rad/s) with a zero magnetic field.
+
+In the logs:
+- The truth simulator's sample time stopped at 14.5 s of simulated time, and from then on it published zeros.
+- The IMU, magnetometer and wheel simulators logged `Parsing exception stof` on 42's data from 12:06:57 on, 19 s after start.
+- The OBC had commanded no actuator before that, with automatic modes switched off at 3 s, and no simulator had sent 42 a command.
+
+So 42 itself stopped advancing, or started sending corrupt output, with no input from the flight software. The same test passed in two earlier campaign runs that day and in three immediate reruns.
+
+**Actions so far.** `sil/sil_env.sh` now has a 42 watchdog. If 42's `time.42` output stops changing for 3 s, it prints `WARNING: 42 has stopped advancing ... results from now on are invalid` and saves the process state and the last output lines to `42-stall.txt` in the run's log directory. This keeps an environment failure from being mistaken for a flight software failure, and captures evidence the next time it happens.
+
+**Next.** On recurrence: check whether 42 is alive and where it is blocked (`42-stall.txt`, then `gdb -p` or `/proc/<pid>/stack`), and whether it coincides with COSMOS and the SIL starting together. One candidate is CPU starvation at start-up; another is a blocking write on one of 42's TX sockets.
 

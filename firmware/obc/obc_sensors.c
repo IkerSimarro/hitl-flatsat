@@ -2,6 +2,8 @@
 ** Sensor acquisition: reads every device, keeps the latest good values, and reports each device's
 ** transitions between working and failed as events (so a fault produces one event, not one per cycle)
 */
+#include <stdio.h>
+
 #include "fs_hal.h"
 #include "fs_persist.h"
 #include "fs_umbilical.h"
@@ -20,8 +22,12 @@ static const char *const device_names[] = {"IMU", "magnetometer", "fine sun sens
 ** the ADCS set is read at 5 Hz, the rest at 1 Hz */
 static const uint8_t fault_persistence[] = {12, 12, 3, 12, 3, 3, 12, 3};
 
+#define MISS_SUMMARY_US 60000000u /* missed reads are logged as a summary once a minute */
+
 static fs_persist_t persist[NUM_TRACKED];
 static uint64_t     gps_last_fix_us;
+static uint16_t     misses[NUM_TRACKED];
+static uint64_t     next_summary_us;
 
 static void reset_persistence(void)
 {
@@ -52,7 +58,7 @@ static void update(uint16_t bit, int rc)
     {
         obc.sensor_valid &= (uint16_t)~bit;
         obc.sensor_misses++;
-        fs_hal_log("%s read missed (error %d)", device_names[idx], rc); /* local log only: misses are routine */
+        misses[idx]++;
     }
 
     ev = fs_persist_update(&persist[idx], rc == DEV_OK);
@@ -126,8 +132,35 @@ void obc_sensors_acquire_adcs(void)
     update(OBC_VALID_RW, rc);
 }
 
+/* Local log only: isolated misses are routine on a loaded machine (NCR-005), persistent ones raise events */
+static void log_miss_summary(void)
+{
+    char     text[160];
+    size_t   n = 0;
+    unsigned i;
+
+    if (fs_hal_time_us() < next_summary_us)
+    {
+        return;
+    }
+    next_summary_us = fs_hal_time_us() + MISS_SUMMARY_US;
+    for (i = 0; i < NUM_TRACKED; i++)
+    {
+        if (misses[i] != 0 && n < sizeof(text))
+        {
+            n += (size_t)snprintf(&text[n], sizeof(text) - n, "%s%s %u", n ? ", " : "", device_names[i], misses[i]);
+            misses[i] = 0;
+        }
+    }
+    if (n != 0)
+    {
+        fs_hal_log("sensor reads missed in the last minute: %s", text);
+    }
+}
+
 void obc_sensors_acquire(void)
 {
+    log_miss_summary();
     if (!devices_reachable())
     {
         return;

@@ -142,6 +142,26 @@ if [ "${SIL_NO_BRIDGE:-0}" != "1" ]; then
      exec "$SIM_BIN/nos3-hil-bridge" -d "$SIL_UMB_PTY" $BRIDGE_ARGS -v > "$SIL_LOG_DIR/bridge.log" 2>&1) &
 fi
 
+# 42 watchdog (NCR-012): 42 appends to time.42 every simulated second. If that stops while the time driver
+# runs, results after that point are invalid; say so loudly instead of letting it look like a flight
+# software failure
+(last=""; stalled=0
+ while sleep 3; do
+     cur=$(tail -c 64 "$FORTYTWO_DIR/$INOUT_NAME/time.42" 2> /dev/null)
+     if [ -n "$last" ] && [ "$cur" = "$last" ]; then
+         if [ $stalled = 0 ]; then
+             log "WARNING: 42 has stopped advancing (time.42 unchanged for 3 s): results from now on are invalid"
+             { date; pgrep -a -f "./42 $INOUT_NAME"; tail -5 "$FORTYTWO_DIR/$INOUT_NAME/time.42"; } \
+                 > "$SIL_LOG_DIR/42-stall.txt" 2>&1
+         fi
+         stalled=1
+     elif [ $stalled = 1 ]; then
+         log "42 is advancing again"
+         stalled=0
+     fi
+     last=$cur
+ done) &
+
 "$@"
 RC=$?
 log "command exited with $RC"

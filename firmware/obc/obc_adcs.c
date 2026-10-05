@@ -19,7 +19,7 @@
 #define MANUAL_RW_BANDWIDTH 1.0f /* 1/s: TEST mode wheel speed loop */
 
 static adcs_bdot_t bdot;
-static uint64_t    last_step_us;
+static uint64_t    last_mag_us; /* last good magnetometer sample used by B-dot */
 
 /* When each automatic transition's condition became true (0 = not true) */
 static uint64_t since_tumbling;
@@ -74,18 +74,20 @@ static void stop_actuators(void)
 
 /* ---- Control step ---- */
 
-static void detumble(float dt)
+/* A single missed read keeps the last commands: it's routine on a loaded machine (NCR-005), and a sensor that
+** stays silent is declared failed after ~2.5 s, which the fault responses handle */
+static void detumble(uint64_t now)
 {
-    float m[3] = {0.0f, 0.0f, 0.0f};
+    float m[3];
 
-    if (sensors_ok(OBC_VALID_MAG))
+    if (!sensors_ok(OBC_VALID_MAG))
     {
-        adcs_bdot_step(&bdot, obc.mag.field, dt, obc.bdot_gain, ADCS_BDOT_FILTER, ADCS_MTB_MAX, m);
+        return;
     }
-    else
-    {
-        adcs_bdot_reset(&bdot); /* restart the derivative when the field comes back */
-    }
+    /* The field derivative spans the time since the last good sample */
+    adcs_bdot_step(&bdot, obc.mag.field, last_mag_us ? (float)(now - last_mag_us) / 1e6f : ADCS_PERIOD_S,
+                   obc.bdot_gain, ADCS_BDOT_FILTER, ADCS_MTB_MAX, m);
+    last_mag_us = now;
     set_torquers(m);
 }
 
@@ -99,24 +101,37 @@ static void sun_point(void)
     int   i;
     int   was_converged = obc.adcs.converged;
 
-    obc.adcs.pointing_error = -1.0f;
-    if (sensors_ok(OBC_VALID_IMU | OBC_VALID_RW))
+    if (!sensors_ok(OBC_VALID_IMU | OBC_VALID_RW))
     {
-        obc.adcs.pointing_error = adcs_sun_point(&cfg, obc.adcs.sun, obc.adcs.sun_valid, obc.imu.rate, t);
-        if (sensors_ok(OBC_VALID_MAG))
+        return; /* missed read: keep the last commands and state (see detumble) */
+    }
+    obc.adcs.pointing_error = adcs_sun_point(&cfg, obc.adcs.sun, obc.adcs.sun_valid, obc.imu.rate, t);
+    if (sensors_ok(OBC_VALID_MAG))
+    {
+        for (i = 0; i < 3; i++)
         {
-            for (i = 0; i < 3; i++)
-            {
-                h[i] = (float)obc.rw_momentum[i];
-            }
-            adcs_momentum_dump(h, obc.mag.field, ADCS_MM_GAIN, ADCS_MTB_MAX, m);
+            h[i] = (float)obc.rw_momentum[i];
         }
+        adcs_momentum_dump(h, obc.mag.field, ADCS_MM_GAIN, ADCS_MTB_MAX, m);
     }
     set_wheels(t);
     set_torquers(m);
 
-    obc.adcs.converged = (uint8_t)(obc.adcs.pointing_error >= 0.0f &&
-                                   obc.adcs.pointing_error < ADCS_POINTED_ERROR && body_rate() < ADCS_POINTED_RATE);
+    /* Converged within the limits; it takes twice the limits (or losing the Sun) to un-converge, so noise
+       around a limit doesn't flicker the flag and repeat the event */
+    if (obc.adcs.pointing_error < 0.0f)
+    {
+        obc.adcs.converged = 0;
+    }
+    else if (!was_converged)
+    {
+        obc.adcs.converged = (uint8_t)(obc.adcs.pointing_error < ADCS_POINTED_ERROR && body_rate() < ADCS_POINTED_RATE);
+    }
+    else
+    {
+        obc.adcs.converged =
+            (uint8_t)(obc.adcs.pointing_error < 2.0f * ADCS_POINTED_ERROR && body_rate() < 2.0f * ADCS_POINTED_RATE);
+    }
     if (obc.adcs.converged && !was_converged)
     {
         obc_event(EVT_ADCS, FLATSAT_SEVERITY_INFO, "sun pointing converged: error %.1f deg, rate %.2f deg/s",
@@ -144,9 +159,7 @@ static void manual_wheels(void)
 void obc_adcs_step(void)
 {
     uint64_t now = fs_hal_time_us();
-    float    dt  = last_step_us ? (float)(now - last_step_us) / 1e6f : ADCS_PERIOD_S;
 
-    last_step_us = now;
     obc_sensors_acquire_adcs();
     obc.adcs.sun_valid =
         (uint8_t)(sensors_ok(OBC_VALID_CSS) && adcs_sun_from_css(obc.css.illum, ADCS_CSS_MIN, obc.adcs.sun));
@@ -155,7 +168,7 @@ void obc_adcs_step(void)
     {
         case FLATSAT_MODE_DETUMBLE:
             obc.adcs.adcs_mode = FLATSAT_ADCS_MODE_BDOT;
-            detumble(dt);
+            detumble(now);
             break;
         case FLATSAT_MODE_SUN_POINT:
             obc.adcs.adcs_mode = FLATSAT_ADCS_MODE_SUN_POINT;
@@ -283,6 +296,7 @@ void obc_adcs_mode_changed(uint8_t from, uint8_t to)
     (void)to;
     stop_actuators();
     adcs_bdot_reset(&bdot);
+    last_mag_us = 0;
     memset(obc.adcs.manual_rw, 0, sizeof(obc.adcs.manual_rw));
     obc.adcs.converged      = 0;
     obc.adcs.pointing_error = -1.0f;
@@ -299,5 +313,5 @@ void obc_adcs_init(void)
     obc.sun_kd              = ADCS_SUN_KD;
     adcs_bdot_reset(&bdot);
     reset_timers();
-    last_step_us = 0;
+    last_mag_us = 0;
 }
