@@ -9,6 +9,7 @@ on trust: rates and pointing are checked against 42's truth stream. Runs in the 
         (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_adcs.py'
 """
 import csv
+import datetime
 import math
 import os
 import pathlib
@@ -62,7 +63,8 @@ class AdcsGround(Ground):
         d = self.truth_rx.recv(1024)
         if struct.unpack(">h", d[:2])[0] == 0:
             return  # 42 not started yet
-        t, off = {}, 20
+        y, _doy, mo, day, hh, mm = struct.unpack(">6h", d[:12])
+        t, off = {"utc": datetime.datetime(y, mo, day, hh, mm) + datetime.timedelta(seconds=struct.unpack(">d", d[12:20])[0])}, 20
         for name, n in TRUTH_FIELDS:
             t[name] = struct.unpack(f">{n}d", d[off:off + 8 * n])
             off += 8 * n
@@ -150,7 +152,7 @@ def run(g):
     st = g.wait_for("ADCS_STATE", 5.0, lambda f: f["ADCS_MODE"] == icd.ADCS_MODE["BDOT"] and
                     any(d != 0 for d in vec(f, "TRQ_DUTY")))
     check(hk is not None and hk["MODE_REASON"] == icd.MODE_REASON["AUTO_RATES_HIGH"] and st is not None,
-          "tumbling detected: SAFE -> DETUMBLE (auto)",
+          "[TC-08.1] tumbling detected: SAFE -> DETUMBLE (auto)",
           f"after {time.monotonic() - t0:.0f} s at {w0:.1f} deg/s, torquer duty {vec(st, 'TRQ_DUTY') if st else '?'}"
           f" (0.01 %)")
 
@@ -159,7 +161,7 @@ def run(g):
     hk = wait_mode(g, "SUN_POINT", 900.0)
     w_handover = g.truth_rate_deg()
     check(hk is not None and hk["MODE_REASON"] == icd.MODE_REASON["AUTO_CONVERGED"] and w_handover < 2.2,
-          "B-dot detumble: DETUMBLE -> SUN_POINT (auto)",
+          "[TC-08.2] B-dot detumble: DETUMBLE -> SUN_POINT (auto)",
           f"{w0:.2f} -> {w_handover:.2f} deg/s (42 truth) in {time.monotonic() - t_detumble:.0f} s")
 
     # ---- 3. Sun pointing converges (in sunlight) ----
@@ -169,11 +171,11 @@ def run(g):
         g.pump(1.0)
         err_truth = g.truth_sun_error_deg()
         err_obc = st["POINTING_ERROR"] / DEG
-        check(err_truth < 5.0 and abs(err_truth - err_obc) < 3.0, "sun pointing converged (42 truth)",
+        check(err_truth < 5.0 and abs(err_truth - err_obc) < 3.0, "[TC-08.3] sun pointing converged (42 truth)",
               f"after {time.monotonic() - t_point:.0f} s: truth {err_truth:.2f} deg, OBC estimate {err_obc:.2f} deg, "
               f"rate {g.truth_rate_deg():.3f} deg/s")
     else:
-        check(False, "sun pointing converged (42 truth)", f"no convergence, sun valid "
+        check(False, "[TC-08.3] sun pointing converged (42 truth)", f"no convergence, sun valid "
               f"{g.latest['ADCS_STATE'][1]['SUN_VALID']}, truth error {g.truth_sun_error_deg():.1f} deg")
 
     # ---- 4. Pointing holds; wheels within limits; the physical wheel mirrors wheel 0 ----
@@ -184,7 +186,7 @@ def run(g):
         torque_peak = max([torque_peak] + [abs(x) for x in vec(g.latest["ADCS_STATE"][1], "RW_CMD_TORQUE")])
         sun_lost += g.latest["ADCS_STATE"][1]["SUN_VALID"] == 0
     st = g.latest["ADCS_STATE"][1]
-    check(worst < 5.0 and torque_peak <= 1e-3 + 1e-9, "pointing held for 30 s, wheel torque in limits",
+    check(worst < 5.0 and torque_peak <= 1e-3 + 1e-9, "[TC-08.4] pointing held for 30 s, wheel torque in limits",
           f"worst {worst:.2f} deg (truth), peak wheel torque {torque_peak * 1e3:.3f} mN m, Sun invalid {sun_lost} s, "
           f"sim wheel speeds {[round(x, 1) for x in vec(st, 'RW_SIM_SPEED')]} rad/s, physical wheel "
           f"{st['PHYS_RW_MEAS_SPEED']:.1f} rad/s")
@@ -199,7 +201,7 @@ def run(g):
     g.pump(15.0)
     check(hk is not None and hk["MODE_REASON"] == icd.MODE_REASON["FAULT"] and event_seen(g, "IMU failed in", n)
           and g.mode() == icd.MODE["SAFE"] and event_seen(g, "IMU recovered", n),
-          "IMU failure in SUN_POINT: SAFE, stays there", f"SAFE {t_safe:.1f} s after the IMU stopped, IMU recovered, "
+          "[TC-08.5] IMU failure in SUN_POINT: SAFE, stays there", f"SAFE {t_safe:.1f} s after the IMU stopped, IMU recovered, "
           f"still SAFE 15 s later at {g.truth_rate_deg():.2f} deg/s")
 
     # ---- 6. Low simulated battery -> LOW_POWER, reduced telemetry; recovery -> SAFE ----
@@ -209,12 +211,12 @@ def run(g):
     g.pump(10.0)
     slowed = g.counts.get("ADCS_STATE", 0) - before
     check(hk is not None and hk["MODE_REASON"] == icd.MODE_REASON["LOW_BATTERY"] and slowed <= 2,
-          "battery 20 %: LOW_POWER, telemetry reduced",
+          "[TC-08.6] battery 20 %: LOW_POWER, telemetry reduced",
           f"{slowed} ADCS_STATE packets in 10 s (1 Hz normally), battery {g.latest['EPS_SIM'][1]['BATT_V']:.2f} V")
     sim_command("eps-command", "STATE_OF_CHARGE=60")
     hk = wait_mode(g, "SAFE", 30.0)
     check(hk is not None and hk["MODE_REASON"] == icd.MODE_REASON["BATTERY_RECOVERED"],
-          "battery 60 %: back to SAFE (auto)", "reason BATTERY_RECOVERED")
+          "[TC-08.7] battery 60 %: back to SAFE (auto)", "reason BATTERY_RECOVERED")
 
     # ---- 7. Commanding: invalid gains rejected, automatic modes off ----
     rejects = g.latest["OBC_HK"][1]["CMD_REJECT_COUNT"]
@@ -223,7 +225,7 @@ def run(g):
     hk = g.wait_for("OBC_HK", 5.0, lambda f: f["CMD_REJECT_COUNT"] >= rejects + 2)
     g.send("OBC_SET_AUTO_MODES", STATE=icd.SWITCH_STATE["OFF"])
     st = g.wait_for("ADCS_STATE", 5.0, lambda f: f["AUTO_MODES"] == 0)
-    check(hk is not None and st is not None, "NaN and negative gains rejected; auto modes off",
+    check(hk is not None and st is not None, "[TC-08.8] NaN and negative gains rejected; auto modes off",
           f"reject count {rejects} -> {g.latest['OBC_HK'][1]['CMD_REJECT_COUNT']}, AUTO_MODES "
           f"{g.latest['ADCS_STATE'][1]['AUTO_MODES']}")
 

@@ -19,6 +19,7 @@
 #   SIL_DOCKER_ARGS     extra docker run arguments
 #   SIL_GRAPHICS=1      open 42's 3D view (also pass DISPLAY and the X11 socket in SIL_DOCKER_ARGS)
 #   SIL_INIT_RATES      initial body rates in deg/s, e.g. "2 -3 4" (default: NOS3's 2.8 deg/s deployment tip-off)
+#   SIL_NO_BRIDGE=1     no HIL bridge: something else drives the NOS3 buses (NOS3's own cFS, test TC-15)
 #   SIL_GS_ARGS         ground station options (ground/flatsat_gs.py), e.g. "--mode always" or "--loss 0.1"
 #
 set -u
@@ -61,4 +62,5 @@ exec docker run $DOCKER_FLAGS ${SIL_DOCKER_ARGS:-} \
     -v "$ROOT:$ROOT" -v "$HOME/.nos3:$HOME/.nos3" -w "$ROOT" \
     -e SIL_LOG_DIR="${SIL_LOG_DIR:-$ROOT/sil/logs/$(date +%Y%m%d-%H%M%S)}" -e SIL_GROUND_HOST="$GROUND_HOST" \
     -e SIL_GRAPHICS="${SIL_GRAPHICS:-0}" -e SIL_INIT_RATES="${SIL_INIT_RATES:-}" -e SIL_GS_ARGS="${SIL_GS_ARGS:-}" \
+    -e SIL_NO_BRIDGE="${SIL_NO_BRIDGE:-0}" \
     "$DBOX" "$ROOT/sil/sil_env.sh" bash -c "$*"

@@ -1,0 +1,329 @@
+# HITL FlatSat: system requirements and test cases (single source)
+#
+# tools/test_docs.py generates docs/requirements/REQUIREMENTS.md and docs/test/TEST_PROCEDURES.md from this
+# file; tools/test_report.py matches the step IDs that the tests print ("PASS [TC-08.3] ...") against it to
+# build the test report and its traceability matrix. Edit here, then run python3 tools/test_docs.py.
+#
+# Verification methods: T test, A analysis, I inspection, D demonstration.
+# Levels: SIL = software-in-the-loop (now); HIL = with the FlatSat hardware (Phase 7).
+
+version: "1.0"
+
+requirements:
+  - id: SYS-01
+    title: Autonomous detumble
+    text: >-
+      From any body rate up to 10 deg/s, the spacecraft shall detect the tumble and reduce its body rate below
+      2 deg/s within 15 minutes, without ground intervention.
+    rationale: >-
+      A satellite leaves its deployer spinning, and a fault can set it spinning again. A pass, and with it the
+      ground, may be hours away; the reaction wheels can only absorb low rates.
+    methods: [A, T]
+
+  - id: SYS-02
+    title: Sun pointing
+    text: >-
+      In sunlight, the spacecraft shall bring its +X axis within 5 deg of the Sun within 5 minutes of starting sun
+      pointing, and then hold it within 2 deg.
+    rationale: The solar panels and the power budget depend on facing the Sun.
+    methods: [A, T]
+
+  - id: SYS-03
+    title: Sensor and actuator fault response
+    text: >-
+      A sensor or actuator that delivers no valid data for 2.5 s shall be declared failed with an event. If the
+      current attitude mode depends on it, the spacecraft shall enter SAFE within 10 s of the failure. Shorter
+      gaps shall not be declared faults, and a device that recovers shall be reported recovered.
+    rationale: >-
+      An attitude law running on a dead sensor or actuator can spin the spacecraft up. A fault response that
+      trips on every late reply makes the spacecraft unusable.
+    methods: [T]
+
+  - id: SYS-04
+    title: Subsystem node and bus health
+    text: >-
+      The flight computer shall detect and report the loss of the ADCS or EPS node, including the loss of the CAN
+      bus, within 5 s. In DETUMBLE or SUN_POINT the loss of the ADCS node shall lead to SAFE. A node restart shall
+      be reported with its reset cause, and a node that loses the flight computer shall put its outputs in a safe
+      state.
+    rationale: The FlatSat is a distributed system; each board must notice when another one stops.
+    methods: [T]
+
+  - id: SYS-05
+    title: Power management
+    text: >-
+      Below 25 % simulated battery state of charge the spacecraft shall enter LOW_POWER within 15 s, with the
+      actuators off and the telemetry reduced, and return to SAFE once above 50 % for 10 s. The FlatSat's own
+      supply rails shall be measured to within 2 mA and 10 mV.
+    rationale: >-
+      Running the battery flat ends the mission. The real rail measurements are how the FlatSat's power budget is
+      verified.
+    methods: [T]
+
+  - id: SYS-06
+    title: Commanding and telemetry
+    text: >-
+      Every telecommand shall be validated (checksum, length, function code, argument ranges) before it runs, and
+      every rejection shall be counted and reported with an event. Housekeeping shall be sent at 1 Hz. Sensor
+      readings shall agree with the simulation's truth within the sensor models' accuracy. The command round trip
+      over the umbilical shall stay below 100 ms.
+    rationale: >-
+      A corrupted or out-of-range command must never reach an actuator. Operators and tests depend on timely,
+      truthful telemetry.
+    methods: [I, T]
+
+  - id: SYS-07
+    title: RF link and ground segment
+    text: >-
+      The spacecraft shall send a beacon every 10 s and hold events and requested data until the next ground
+      contact. Its RF airtime shall stay within 5 % of any hour (10 % including beacons). The ground station shall
+      predict passes to within 15 s and hold telecommands until contact. Corrupted frames shall be rejected and
+      counted.
+    rationale: >-
+      A real spacecraft is only reachable during passes, and the 869.4-869.65 MHz band limits airtime to 10 %.
+    methods: [T, D]
+
+  - id: SYS-08
+    title: Physical reaction wheel
+    text: >-
+      The ADCS node shall bring the physical reaction wheel within 20 rpm of a commanded speed within 2 s of a
+      step of up to 300 rpm. In the attitude modes it shall mirror simulated wheel 0 at 1:10. It shall remove motor
+      drive within 1.5 s of losing its commands or its motor power.
+    rationale: >-
+      The physical wheel is the FlatSat's hardware twin of the simulated actuator; its tracking is what the
+      hardware campaign measures.
+    methods: [A, T]
+
+# Test cases. stage: the tests/run_all.sh stage; script: what it runs; config: how the environment is set up;
+# status: planned or blocked (otherwise automated); informative: excluded from the requirement verdicts.
+# Each step's ID is printed by the test as "PASS [TC-nn.m] ..." or "FAIL [TC-nn.m] ...".
+test_cases:
+  - id: TC-01
+    title: Interface definitions
+    stage: unit:icd, unit:cosmos-defs
+    script: tools/icd_gen.py --check; tests/unit; tests/cosmos/check_defs.sh; tests/cosmos/check_screens.py
+    objective: >-
+      The interface code generated from the ICD is up to date, the Python codec and RF code pass their unit tests,
+      and COSMOS decodes, encodes and displays exactly what the ICD defines.
+    steps:
+      - {id: TC-01.1, title: "Generated files up to date", criterion: "icd_gen --check reports no stale file", reqs: [SYS-06]}
+      - {id: TC-01.2, title: "Codec and RF unit tests", criterion: "all Python unit tests pass", reqs: [SYS-06, SYS-07]}
+      - {id: TC-01.3, title: "COSMOS definitions match the codec", criterion: "every packet decodes and encodes identically", reqs: [SYS-06]}
+      - {id: TC-01.4, title: "COSMOS screens match the definitions", criterion: "every widget and button names an existing item or command", reqs: [SYS-06]}
+
+  - id: TC-02
+    title: Firmware unit tests
+    stage: unit:firmware
+    script: firmware/build/test_common, test_wheel_ctrl, test_adcs
+    objective: >-
+      The flight libraries pass their unit tests on a fake HAL, and the wheel speed loop and ADCS laws meet their
+      performance in closed loop with plant models.
+    steps:
+      - {id: TC-02.1, title: "Common flight libraries", criterion: "all checks pass (CCSDS, time, scheduler, umbilical, persistence, CAN, node protocol, RF frames)", reqs: [SYS-04, SYS-06, SYS-07]}
+      - {id: TC-02.2, title: "Wheel speed loop in closed loop", criterion: "300 rpm step settles within 5 % in < 1.5 s with < 10 % overshoot; no wind-up", reqs: [SYS-08]}
+      - {id: TC-02.3, title: "ADCS laws in closed loop", criterion: "detumble from 5.4-10.2 deg/s to < 2 deg/s in < 120 s; sun pointing within 2 deg in < 150 s; eclipse damping; momentum dump", reqs: [SYS-01, SYS-02]}
+
+  - id: TC-03
+    title: HIL bridge end to end (test environment)
+    stage: e2e:bridge
+    script: nos3/components/hil_bridge/support/e2e_test.sh
+    objective: The HIL bridge carries every frame type between a stand-in MCU and NOS3 (test environment qualification).
+    steps:
+      - {id: TC-03.1, title: "Heartbeat round trip", criterion: "reply received", reqs: [ENV]}
+      - {id: TC-03.2, title: "I2C transaction to the EPS sim", criterion: "housekeeping values as configured", reqs: [ENV]}
+      - {id: TC-03.3, title: "Invalid bus rejected", criterion: "BAD_REQ", reqs: [ENV]}
+      - {id: TC-03.4, title: "UART path", criterion: "sample sim echoes NOOP", reqs: [ENV]}
+      - {id: TC-03.5, title: "Umbilical TM and TC", criterion: "both directions delivered", reqs: [ENV]}
+      - {id: TC-03.6, title: "RF frames with RSSI/SNR", criterion: "frame and metadata delivered", reqs: [ENV]}
+      - {id: TC-03.7, title: "Torquer command", criterion: "reaches the torquer sim", reqs: [ENV]}
+      - {id: TC-03.8, title: "Simulation time", criterion: "TIME frames advance 1 s per second", reqs: [ENV]}
+
+  - id: TC-04
+    title: Sensor and actuator drivers against 42 truth
+    stage: sil:devices
+    config: SIL with a 5.4 deg/s tumble
+    script: firmware/build/test_devices
+    objective: Every OBC driver reads or commands its NOS3 device correctly, compared with 42's truth while the spacecraft tumbles.
+    steps:
+      - {id: TC-04.1, title: "Umbilical link", criterion: "bridge answers", reqs: [ENV]}
+      - {id: TC-04.2, title: "Simulation time", criterion: "TIME frames advance with the simulation", reqs: [SYS-06]}
+      - {id: TC-04.3, title: "42 truth stream", criterion: "receiving", reqs: [ENV]}
+      - {id: TC-04.4, title: "IMU", criterion: "rates within 0.05 deg/s of truth", reqs: [SYS-06]}
+      - {id: TC-04.5, title: "Magnetometer", criterion: "|B| within 2 % and direction within 3 deg of truth", reqs: [SYS-06]}
+      - {id: TC-04.6, title: "Coarse sun sensors", criterion: "outputs match cos(Sun angle) within 0.02", reqs: [SYS-06]}
+      - {id: TC-04.7, title: "Fine sun sensor", criterion: "valid frame and error code", reqs: [SYS-06]}
+      - {id: TC-04.8, title: "Star tracker", criterion: "quaternion matches truth", reqs: [SYS-06]}
+      - {id: TC-04.9, title: "Reaction wheel momentum", criterion: "matches truth", reqs: [SYS-06]}
+      - {id: TC-04.10, title: "Reaction wheel torque", criterion: "0.5 mN m for 2 s adds 1 mN m s within 5 %", reqs: [SYS-06]}
+      - {id: TC-04.11, title: "EPS housekeeping", criterion: "values as configured", reqs: [SYS-06]}
+      - {id: TC-04.12, title: "EPS switch command", criterion: "confirmed in housekeeping", reqs: [SYS-06]}
+      - {id: TC-04.13, title: "Magnetorquers", criterion: "commands sent; out-of-range duty rejected", reqs: [SYS-06]}
+      - {id: TC-04.14, title: "GPS", criterion: "position within 500 m and velocity within 1 m/s of truth", reqs: [SYS-06]}
+
+  - id: TC-05
+    title: Commanding and telemetry over the umbilical
+    stage: sil:umbilical
+    script: tests/system/test_obc_umbilical.py
+    objective: The OBC validates commands, reports rejections, and produces its telemetry at the specified rates.
+    steps:
+      - {id: TC-05.1, title: "Housekeeping at 1 Hz", criterion: "0.6-1.4 Hz measured over 5 s", reqs: [SYS-06]}
+      - {id: TC-05.2, title: "Boot state", criterion: "SAFE, umbilical time source", reqs: [SYS-06]}
+      - {id: TC-05.3, title: "All sensors valid", criterion: "valid mask 0x3F within 20 s", reqs: [SYS-06]}
+      - {id: TC-05.4, title: "Simulated power telemetry", criterion: "plausible EPS_SIM values", reqs: [SYS-06]}
+      - {id: TC-05.5, title: "OBC_NOOP", criterion: "accept count +1 and an event", reqs: [SYS-06]}
+      - {id: TC-05.6, title: "Bad checksum rejected", criterion: "reject count +1 and an event", reqs: [SYS-06]}
+      - {id: TC-05.7, title: "Wrong length rejected", criterion: "reject count +1 and an event", reqs: [SYS-06]}
+      - {id: TC-05.8, title: "Mode transitions", criterion: "allowed ones happen, refused ones are reported", reqs: [SYS-06]}
+      - {id: TC-05.9, title: "Command round trip", criterion: "20/20 pings answered, maximum < 100 ms", reqs: [SYS-06]}
+      - {id: TC-05.10, title: "Telemetry rate command", criterion: "EPS_SIM rate follows OBC_SET_TLM_PERIOD", reqs: [SYS-06]}
+      - {id: TC-05.11, title: "Simulated EPS switch", criterion: "switch on then off, confirmed", reqs: [SYS-06]}
+      - {id: TC-05.12, title: "Manual actuator command refused outside TEST", criterion: "rejected with an event", reqs: [SYS-06]}
+
+  - id: TC-06
+    title: CAN nodes, FlatSat power and the physical wheel
+    stage: sil:can-nodes
+    script: tests/system/test_can_nodes.py
+    objective: The OBC operates the ADCS and EPS nodes over CAN, including switch and reset fault injection.
+    steps:
+      - {id: TC-06.1, title: "Nodes up", criterion: "alive mask 0x0E, CAN traffic without errors", reqs: [SYS-04]}
+      - {id: TC-06.2, title: "FlatSat power telemetry", criterion: "battery 3.6-4.2 V; rail currents in range", reqs: [SYS-05]}
+      - {id: TC-06.3, title: "Physical wheel speed step", criterion: "within 20 rpm of 300 rpm", reqs: [SYS-08]}
+      - {id: TC-06.4, title: "Motor current on the ADCS rail", criterion: "rises > 10 mA above idle", reqs: [SYS-05]}
+      - {id: TC-06.5, title: "Motor power cut", criterion: "fault reported, wheel coasts below 150 rpm in 3 s", reqs: [SYS-08, SYS-04]}
+      - {id: TC-06.6, title: "Motor power restored", criterion: "wheel back to 300 rpm", reqs: [SYS-08]}
+      - {id: TC-06.7, title: "ADCS node held in reset", criterion: "node lost reported, rail current drops", reqs: [SYS-04]}
+      - {id: TC-06.8, title: "ADCS node released", criterion: "node up with reset cause POWER_ON, wheel resumes", reqs: [SYS-04]}
+      - {id: TC-06.9, title: "Commanded node reset", criterion: "acknowledged; reboot reported with reset cause COMMAND", reqs: [SYS-04]}
+      - {id: TC-06.10, title: "Leaving TEST", criterion: "wheel override ends", reqs: [SYS-08]}
+
+  - id: TC-07
+    title: Sensor fault persistence and isolation
+    stage: sil:faults
+    script: tests/system/test_fault_persistence.sh
+    objective: Isolated misses are tolerated, persistent ones declared and recovered, and one failed device doesn't affect the others.
+    steps:
+      - {id: TC-07.1, title: "Normal operation", criterion: "no missed reads", reqs: [SYS-03]}
+      - {id: TC-07.2, title: "1.5 s IMU outage", criterion: "misses counted, no fault declared", reqs: [SYS-03]}
+      - {id: TC-07.3, title: "6 s IMU outage", criterion: "one fault and one recovery event", reqs: [SYS-03]}
+      - {id: TC-07.4, title: "Fault isolated", criterion: "no other device faulted, umbilical up", reqs: [SYS-03]}
+      - {id: TC-07.5, title: "IMU simulator frozen", criterion: "other buses unaffected, umbilical up (42 stalls too: GPS fixes stop and the magnetometer freezes, and both may be declared failed)", reqs: [SYS-03]}
+
+  - id: TC-08
+    title: Attitude control in the loop with 42
+    stage: sil:adcs
+    config: SIL with a 5.4 deg/s tumble
+    script: tests/system/test_adcs.py
+    objective: >-
+      From a tumble, the OBC detumbles, hands over to sun pointing and converges on its own, checked against 42's
+      truth; then fault, low-battery and command validation responses.
+    steps:
+      - {id: TC-08.1, title: "Tumble detected", criterion: "SAFE to DETUMBLE automatically, torquers active", reqs: [SYS-01]}
+      - {id: TC-08.2, title: "Detumble", criterion: "below 2 deg/s (42 truth) and SUN_POINT automatically", reqs: [SYS-01]}
+      - {id: TC-08.3, title: "Sun pointing converges", criterion: "< 5 deg (42 truth) in < 5 min; estimate within 3 deg of truth", reqs: [SYS-02]}
+      - {id: TC-08.4, title: "Pointing held", criterion: "< 5 deg for 30 s; wheel torque within 1 mN m", reqs: [SYS-02]}
+      - {id: TC-08.5, title: "IMU failure in SUN_POINT", criterion: "SAFE within 10 s; stays in SAFE after recovery", reqs: [SYS-03]}
+      - {id: TC-08.6, title: "Low battery", criterion: "LOW_POWER within 20 s; ADCS_STATE drops to 0.1 Hz", reqs: [SYS-05]}
+      - {id: TC-08.7, title: "Battery recovered", criterion: "back to SAFE with reason BATTERY_RECOVERED", reqs: [SYS-05]}
+      - {id: TC-08.8, title: "Invalid gains rejected", criterion: "NaN and negative gains rejected; auto modes switchable", reqs: [SYS-06]}
+
+  - id: TC-09
+    title: RF link
+    stage: sil:rf-link
+    config: ground station out of contact at start (--mode never --seed 1)
+    script: tests/system/test_rf_link.py
+    objective: Store and forward, telecommands over RF, frame checks, link loss and beacon control, end to end through the ground station.
+    steps:
+      - {id: TC-09.1, title: "Ground station status", criterion: "out of contact, next pass predicted", reqs: [SYS-07]}
+      - {id: TC-09.2, title: "Out of contact", criterion: "beacons sent but unheard; data held on board and at the ground", reqs: [SYS-07]}
+      - {id: TC-09.3, title: "AOS", criterion: "stored events delivered; queued telecommand executed", reqs: [SYS-07]}
+      - {id: TC-09.4, title: "Beacons in contact", criterion: "at least 2 in 21 s", reqs: [SYS-07]}
+      - {id: TC-09.5, title: "RF round trip and request", criterion: "ping answered; packet downlinked on request", reqs: [SYS-07]}
+      - {id: TC-09.6, title: "Corrupted uplink frames", criterion: "rejected and counted (CRC)", reqs: [SYS-07]}
+      - {id: TC-09.7, title: "50 % frame loss", criterion: "frames lost and delivered, both counted", reqs: [SYS-07]}
+      - {id: TC-09.8, title: "LOS", criterion: "contact lost noticed on board within 60 s", reqs: [SYS-07]}
+      - {id: TC-09.9, title: "Beacon control", criterion: "off stops transmissions; 3 s rejected; 10 s restored", reqs: [SYS-07]}
+
+  - id: TC-10
+    title: RF pass over NASA Wallops
+    stage: sil:rf-pass
+    config: ground station at Wallops (37.9402 N, 75.4664 W)
+    script: tests/system/test_rf_pass.py
+    objective: A real pass from 42's orbit, against the ground station's own prediction.
+    steps:
+      - {id: TC-10.1, title: "Pass predicted", criterion: "AOS within 10 min, > 30 deg maximum elevation", reqs: [SYS-07]}
+      - {id: TC-10.2, title: "AOS", criterion: "within 15 s of the prediction (simulation time)", reqs: [SYS-07]}
+      - {id: TC-10.3, title: "Store and forward across AOS", criterion: "queued telecommand executed; stored event delivered", reqs: [SYS-07]}
+      - {id: TC-10.4, title: "The pass", criterion: "≥ 20 beacons; maximum elevation within 2 deg of prediction; RSSI ≥ 5 dB stronger at culmination", reqs: [SYS-07]}
+      - {id: TC-10.5, title: "LOS", criterion: "within 15 s of the prediction", reqs: [SYS-07]}
+      - {id: TC-10.6, title: "LOS on board", criterion: "noticed within 60 s", reqs: [SYS-07]}
+
+  - id: TC-11
+    title: Ground segment end to end (COSMOS)
+    stage: e2e:cosmos
+    script: tests/cosmos/test_cosmos_e2e.sh
+    objective: NOS3's COSMOS, headless, operates the FlatSat through both the umbilical and the radio.
+    steps:
+      - {id: TC-11.1, title: "Telemetry arriving", criterion: "OBC_HK in COSMOS", reqs: [SYS-06]}
+      - {id: TC-11.2, title: "Automatic modes off", criterion: "command accepted", reqs: [SYS-06]}
+      - {id: TC-11.3, title: "All sensors valid", criterion: "valid mask 63", reqs: [SYS-06]}
+      - {id: TC-11.4, title: "NOOP with checksum", criterion: "accepted, no rejection", reqs: [SYS-06]}
+      - {id: TC-11.5, title: "Mode change", criterion: "TEST and back to SAFE", reqs: [SYS-06]}
+      - {id: TC-11.6, title: "Ping", criterion: "reply in COSMOS", reqs: [SYS-06]}
+      - {id: TC-11.7, title: "Event", criterion: "text in COSMOS", reqs: [SYS-06]}
+      - {id: TC-11.8, title: "42 truth in COSMOS", criterion: "SIM_42_TRUTH received", reqs: [ENV]}
+      - {id: TC-11.9, title: "Ground station status", criterion: "GS_STATUS on FLATSAT_RF", reqs: [SYS-07]}
+      - {id: TC-11.10, title: "Contact from COSMOS", criterion: "beacon received over the radio", reqs: [SYS-07]}
+      - {id: TC-11.11, title: "Command over the radio", criterion: "executed; confirmed in the next beacon", reqs: [SYS-07]}
+
+  - id: TC-12
+    title: Actuator, node and bus failures
+    stage: sil:failures
+    config: SIL in SUN_POINT and DETUMBLE
+    script: tests/system/test_failures.py
+    objective: Fault injection beyond the sensors - a failed wheel, a failed magnetometer during detumble, crashed nodes and a lost CAN bus.
+    steps:
+      - {id: TC-12.1, title: "Reaction wheel failure in SUN_POINT", criterion: "wheels declared failed; SAFE within 10 s", reqs: [SYS-03]}
+      - {id: TC-12.2, title: "Magnetometer failure in DETUMBLE", criterion: "declared failed; SAFE within 10 s", reqs: [SYS-03]}
+      - {id: TC-12.3, title: "ADCS node crash in SUN_POINT", criterion: "node lost within 5 s; SAFE; restart reported", reqs: [SYS-04]}
+      - {id: TC-12.4, title: "EPS node crash", criterion: "node lost within 5 s; restart reported", reqs: [SYS-04]}
+      - {id: TC-12.5, title: "CAN bus loss", criterion: "both nodes lost within 5 s; ADCS node stops the wheel; recovery on restore", reqs: [SYS-04, SYS-08]}
+
+  - id: TC-13
+    title: FlatSat power measurement and wheel performance
+    stage: sil:hardware-twin
+    script: tests/system/test_hardware_twin.py
+    objective: The EPS node's measurements against the plant's true values, and the physical wheel's step responses and mirroring.
+    steps:
+      - {id: TC-13.1, title: "Rail measurement accuracy", criterion: "within 2 mA and 10 mV of the true values over four load cases", reqs: [SYS-05]}
+      - {id: TC-13.2, title: "Wheel steps", criterion: "within 20 rpm of ±100, ±300 rpm in < 2 s; overshoot < 10 %", reqs: [SYS-08]}
+      - {id: TC-13.3, title: "Mirroring in SUN_POINT", criterion: "physical wheel at 1:10 of wheel 0 within 20 rpm", reqs: [SYS-08]}
+      - {id: TC-13.4, title: "Loss of commands", criterion: "motor drive removed within 1.5 s", reqs: [SYS-08]}
+
+  - id: TC-14
+    title: One-orbit endurance
+    stage: sil:orbit
+    script: tests/system/test_orbit.py
+    objective: >-
+      A full orbit (about 95 minutes) without intervention: attitude held in sunlight and through eclipse, eclipse
+      detection against 42's geometry, wheel momentum bounded, no faults and no telemetry gaps. About 100 minutes:
+      run with tests/run_all.sh all or tests/run_all.sh orbit.
+    steps:
+      - {id: TC-14.1, title: "Pointing in sunlight", criterion: "within 2 deg after convergence", reqs: [SYS-02]}
+      - {id: TC-14.2, title: "Eclipse detection", criterion: "within 30 s of 42's geometric eclipse entry and exit", reqs: [SYS-02, SYS-05]}
+      - {id: TC-14.3, title: "Reacquisition after eclipse", criterion: "within 5 deg in < 5 min", reqs: [SYS-02]}
+      - {id: TC-14.4, title: "Wheel momentum", criterion: "stays below 50 % of capacity", reqs: [SYS-02]}
+      - {id: TC-14.5, title: "Health", criterion: "no event of WARNING severity or above, mode SUN_POINT throughout, no telemetry gap > 5 s", reqs: [SYS-03, SYS-06]}
+
+  - id: TC-15
+    title: Comparison with NASA's reference ADCS
+    stage: sil:reference
+    script: tests/system/test_reference_adcs.py
+    objective: >-
+      The same scenario flown by NOS3's own flight software (cFS with the generic ADCS app), as a benchmark for the
+      FlatSat's detumble and sun pointing. Blocked: in this environment the reference ADCS commands wheel torques far
+      beyond the wheels' limit (NCR-015), so the comparison wouldn't be fair; available on demand.
+    status: blocked
+    informative: true   # a benchmark: recorded, but not part of any requirement's verdict
+    steps:
+      - {id: TC-15.1, title: "Detumble benchmark", criterion: "informative: time to 2 deg/s, FlatSat vs cFS", reqs: [SYS-01]}
+      - {id: TC-15.2, title: "Sun pointing benchmark", criterion: "informative: time to 5 deg and steady-state error, FlatSat vs cFS", reqs: [SYS-02]}

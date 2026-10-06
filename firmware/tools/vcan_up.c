@@ -5,7 +5,8 @@
 ** no iproute2, so this does what "ip link add dev vcan0 type vcan; ip link set up vcan0" does, through
 ** rtnetlink. Needs the vcan kernel module (loaded on the host) and CAP_NET_ADMIN.
 **
-** Usage: vcan_up [IFNAME]   (default vcan0)
+** Usage: vcan_up [IFNAME]        create and bring up (default vcan0)
+**        vcan_up IFNAME down   take it down: the CAN bus loss of fault injection test TC-12
 */
 #define _DEFAULT_SOURCE
 
@@ -85,7 +86,7 @@ static int create_vcan(const char *ifname)
     return rc == -EEXIST ? 0 : rc;
 }
 
-static int set_up(const char *ifname)
+static int set_up(const char *ifname, int up)
 {
     struct ifreq ifr;
     int          fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -101,9 +102,9 @@ static int set_up(const char *ifname)
     {
         rc = -errno;
     }
-    else if (!(ifr.ifr_flags & IFF_UP))
+    else if (!(ifr.ifr_flags & IFF_UP) != !up)
     {
-        ifr.ifr_flags |= IFF_UP;
+        ifr.ifr_flags = (short)(up ? (ifr.ifr_flags | IFF_UP) : (ifr.ifr_flags & ~IFF_UP));
         if (ioctl(fd, SIOCSIFFLAGS, &ifr) < 0)
         {
             rc = -errno;
@@ -116,7 +117,20 @@ static int set_up(const char *ifname)
 int main(int argc, char **argv)
 {
     const char *ifname = argc > 1 ? argv[1] : "vcan0";
-    int         rc     = create_vcan(ifname);
+    int         rc;
+
+    if (argc > 2 && strcmp(argv[2], "down") == 0)
+    {
+        rc = set_up(ifname, 0);
+        if (rc != 0)
+        {
+            fprintf(stderr, "vcan_up: cannot take %s down: %s\n", ifname, strerror(-rc));
+            return 1;
+        }
+        printf("vcan_up: %s is down\n", ifname);
+        return 0;
+    }
+    rc = create_vcan(ifname);
 
     if (rc != 0)
     {
@@ -125,7 +139,7 @@ int main(int argc, char **argv)
                 rc == -EPERM ? " (needs CAP_NET_ADMIN)" : "");
         return 1;
     }
-    rc = set_up(ifname);
+    rc = set_up(ifname, 1);
     if (rc != 0)
     {
         fprintf(stderr, "vcan_up: cannot bring %s up: %s\n", ifname, strerror(-rc));

@@ -17,6 +17,9 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-011](#ncr-011) | 2026-10-05 | Bridge answers "bus busy" to back-to-back transactions; converged event repeats | Minor | Closed |
 | [NCR-012](#ncr-012) | 2026-10-05 | 42 stopped advancing 14 s into one COSMOS end-to-end run | Major | Open |
 | [NCR-013](#ncr-013) | 2026-10-05 | One lost hail drops the spacecraft out of contact | Minor | Closed |
+| [NCR-014](#ncr-014) | 2026-10-06 | A frozen magnetometer is not detected; the detumble silently stops | Major | Closed |
+| [NCR-015](#ncr-015) | 2026-10-06 | NOS3's reference ADCS drives the wheels beyond their limit in the SIL environment | Minor | Open |
+| [NCR-016](#ncr-016) | 2026-10-06 | Two test scripts report failures the flight software didn't cause | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -351,4 +354,84 @@ The first version watched 42's `time.42` output file and raised false alarms in 
 **Fix.** The contact timeout is now 45 s: one lost hail is tolerated, two are not. The trade-off is that a real loss of signal takes up to 45 s to notice on board.
 
 **Verification.** `test_rf_link.py` 9/9, with no spurious contact changes under 50 % loss. In `test_rf_pass.py` the OBC notices LOS 39 s after the ground station.
+
+---
+
+## NCR-014
+
+**A frozen magnetometer is not detected; the detumble silently stops**
+
+| | |
+|---|---|
+| Found by | Fault injection test TC-12.2 (`tests/system/test_failures.py`), first run |
+| Item | OBC sensor acquisition, `firmware/obc/obc_sensors.c` (fault detection, SYS-03) |
+| Severity | Major: a magnetometer failure during the detumble went unnoticed, and B-dot stopped working with no event and no safe mode |
+| Status | Closed 2026-10-06 |
+
+**Observation.** The magnetometer simulator was disabled during `DETUMBLE` for 18 s. The OBC logged no missed read, no fault and no mode change. The other injected failures (a wheel, the ADCS and EPS nodes, the CAN bus) were all detected.
+
+**Root cause.** Disabled, NOS3's magnetometer simulator keeps answering with well-formed data: the frame header, followed by its last field reading, unchanged. That is how a stuck sensor fails in reality too. Every reply passed the driver's checks, so the OBC counted good reads. B-dot computed a zero field derivative, so its dipole fell to zero. The fault detection only recognised missing or malformed replies, never valid-looking but frozen ones.
+
+**Fix.** Stuck-sensor detection for the magnetometer. In orbit the field in the body frame changes by about 14 nT between 5 Hz readings, against a 2 nT resolution, whatever the attitude. So 10 bit-identical readings in a row (2 s) mean the sensor is frozen. From then on its readings count as missed (`DEV_ERR_STUCK`), and the existing persistence filter declares it failed 2.4 s later, with the event text `output frozen`.
+
+The gyro is excluded on purpose: a spacecraft spinning freely about a principal axis legitimately gives constant rates.
+
+Side effect: when 42 itself stalls (TC-07.5 freezes a simulator, which stalls 42), the magnetometer's field genuinely freezes and is now reported. The test accepts that, as it already did for GPS.
+
+**Verification.** TC-12.2: see the test report.
+
+---
+
+## NCR-015
+
+**NOS3's reference ADCS drives the wheels beyond their limit in the SIL environment**
+
+| | |
+|---|---|
+| Found by | Benchmark TC-15 (`tests/system/test_reference_adcs.py`), comparing the FlatSat with NOS3's own flight software |
+| Item | Reference software in the test environment: NOS3's cFS with its generic ADCS app (`nos3/components/generic_adcs`), run in the FlatSat's SIL environment |
+| Severity | Minor: it doesn't affect the FlatSat, but it blocks the benchmark against NASA's reference implementation |
+| Status | Open: investigation stopped (see below) |
+
+**Observation.** cFS was run in place of the FlatSat OBC from the same 5.4°/s tumble. Its device apps were enabled, and its ADCS was commanded to B-dot. The 42 truth rate then jumped between 2.3 and 6.8°/s within seconds, which magnetic torquers can't do (at most about 0.1°/s per second here).
+
+The wheel simulators' logs show the ADCS commanding wheel torques of up to ±16.7 mN m: 16 times the wheels' 1 mN m limit, which 42 clamps. The sign alternated about once a second, although the B-dot law commands no wheel torque. After the hand-over to sun-safe pointing, the steady-state error was 7.7°, compared with 0.03° for the FlatSat.
+
+**Analysis so far.**
+- The cFS ADCS sends its wheel commands at about 1 Hz.
+- Its configuration (`Inp_ADAC.txt`) declares a 0.1 s control period, which the derivative estimates and gains are based on.
+- A loop running ten times slower than designed is a likely cause, but not a confirmed one.
+- Another possibility is wheel commands left over from the mode active before B-dot.
+- The FlatSat environment changes 42's FSW sample time (NCR-001) and fixes 42's command parsing (NCR-010); both affect any software commanding 42's actuators, including cFS.
+
+**Disposition.** The benchmark only makes sense against NASA's software as delivered; re-tuning it would defeat its purpose. TC-15 is blocked and remains available on demand (`tests/run_all.sh reference`). To unblock it, confirm the ADCS app's actual scheduling rate in NOS3's scheduler table against `Inp_ADAC.txt`, and check the reference in an unmodified NOS3 launch (with cFS, `make launch`) for the same behaviour, to separate a NOS3 configuration issue from an interaction with the FlatSat environment.
+
+---
+
+## NCR-016
+
+**Two test scripts report failures the flight software didn't cause**
+
+| | |
+|---|---|
+| Found by | Campaign `run-20261006-144041` (`tests/run_all.sh all`): stages `sil:umbilical` and `sil:orbit` failed |
+| Item | Test scripts: `tests/system/test_obc_umbilical.py` (TC-05) and `tests/system/test_orbit.py` (TC-14) |
+| Severity | Minor: no flight software defect, but two test cases gave no valid verdict |
+| Status | Closed: both stages passed in the retest |
+
+**Observation.**
+- TC-05 stopped after step 4 with a Python `KeyError: '[TC-05.5] OBC_NOOP'`. The remaining eight steps never ran.
+- TC-14.5 (health over the orbit) failed with one "fault event": `RF contact lost (0 packets queued)`.
+
+**Root cause.**
+- TC-05: when the procedure step IDs were added to the scripts, they were also inserted into the command names that the script sends (`g.send("[TC-05.5] OBC_NOOP")`), not only into the result lines. The script was not rerun after that edit.
+- TC-14.5: the script recognised fault events by their text ("failed", "lost", "SAFE"). The end of a ground station pass raises "RF contact lost", an INFO event that is part of normal operations. In the orbit run every event was INFO.
+
+**Correction.**
+- TC-05: the step IDs were removed from the command names; no other script had the same edit (checked with a search).
+- TC-14.5: a fault is now any event of WARNING severity or above, from the severity field the OBC sends with each event. The procedure's pass criterion was updated to say so.
+
+**Verification.** Both stages were rerun after the correction (`tests/run_all.sh umbilical orbit`). The test report lists the retest next to the campaign result.
+
+**Lesson.** A script edit made by search and replace is a change to the test: rerun the script before the campaign. A pass criterion should test a defined attribute (here the event severity), not the wording of a message.
 

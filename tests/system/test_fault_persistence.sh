@@ -55,34 +55,35 @@ sleep 2 # umbilical link up
 python3 "$ROOT/sil/obc_cmd.py" OBC_SET_AUTO_MODES STATE=0
 sleep 6 # buses opened, a few clean acquisition cycles
 m0=$(misses)
-check "$([ "$m0" = "0" ] && echo 1)" "no misses in normal operation (SENSOR_MISSES $m0)"
+check "$([ "$m0" = "0" ] && echo 1)" "[TC-07.1] no misses in normal operation (SENSOR_MISSES $m0)"
 
 # Short outage: about 7 IMU reads missed (the ADCS reads it at 5 Hz), nothing else, no fault event
 imu DISABLE; sleep 1.5; imu ENABLE; sleep 3
 m1=$(misses)
 check "$([ "$(faults)" = "0" ] && [ "$m1" -ge 5 ] && [ "$m1" -le 10 ] && echo 1)" \
-    "1.5 s outage: $m1 IMU reads missed (expected 5-10), no fault declared ($(faults) fault events)"
+    "[TC-07.2] 1.5 s outage: $m1 IMU reads missed (expected 5-10), no fault declared ($(faults) fault events)"
 
 # Long outage: the IMU is declared failed after 12 consecutive misses (2.4 s) and recovers afterwards
 imu DISABLE; sleep 6; imu ENABLE; sleep 4
 m2=$(misses)
 check "$([ "$(faults)" = "1" ] && [ "$(recoveries)" = "1" ] && echo 1)" \
-    "6 s outage: one IMU fault and one IMU recovery event ($(faults) / $(recoveries)), misses $m1 -> $m2"
+    "[TC-07.3] 6 s outage: one IMU fault and one IMU recovery event ($(faults) / $(recoveries)), misses $m1 -> $m2"
 
 # Isolation (NCR-006): no other device faulted and the umbilical stayed up throughout
 check "$([ "$(all_faults)" = "1" ] && [ "$(link_drops)" = "0" ] && echo 1)" \
-    "fault isolated to the IMU: $(all_faults) device fault event(s) in total, $(link_drops) link drop(s)"
+    "[TC-07.4] fault isolated to the IMU: $(all_faults) device fault event(s) in total, $(link_drops) link drop(s)"
 
 # Unresponsive simulator (NCR-006): freezing the IMU simulator process means its bus never answers.
 # The bridge's IMU worker waits while the other buses carry on. 42 stalls too while the frozen
-# simulator stops reading its socket, so GPS fixes stop and GPS may legitimately fault; every other
-# bus device must keep working and the umbilical must stay up.
+# simulator stops reading its socket, so GPS fixes stop and the magnetometer's field freezes: GPS and
+# the magnetometer (frozen output, NCR-014) may legitimately fault; every other bus device must keep
+# working and the umbilical must stay up.
 before=$(all_faults)
 pkill -STOP -f "nos3-single-simulator .* generic-imu-sim"; sleep 6; pkill -CONT -f "nos3-single-simulator .* generic-imu-sim"
 sleep 5
-others=$(sed -n "$((before + 1)),\$p" <(grep " failed: " "$OBC_LOG") | grep -v -c "IMU failed\|GPS failed")
+others=$(sed -n "$((before + 1)),\$p" <(grep " failed: " "$OBC_LOG") | grep -v -c "IMU failed\|GPS failed\|magnetometer failed")
 check "$([ "$others" = "0" ] && [ "$(link_drops)" = "0" ] && echo 1)" \
-    "IMU simulator frozen 6 s: $others bus device fault(s) besides IMU/GPS, $(link_drops) link drop(s)"
+    "[TC-07.5] IMU simulator frozen 6 s: $others bus device fault(s) besides IMU/GPS/magnetometer, $(link_drops) link drop(s)"
 
 echo "OBC events:"
 grep "EVENT" "$OBC_LOG" | sed 's/^/  /'

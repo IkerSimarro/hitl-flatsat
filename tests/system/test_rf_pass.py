@@ -55,7 +55,7 @@ def run(g, rows):
     # ---- 1. The prediction, before the pass ----
     gs = g.rf_wait("GS_STATUS", 10.0, lambda f: f["NEXT_AOS"] not in (0, 0xFFFFFFFF))
     if gs is None:
-        check(False, "pass predicted", "no prediction")
+        check(False, "[TC-10.1] pass predicted", "no prediction")
         return 1
     # In simulation time (GS_STATUS time stamps): the simulation can run a few % slower than the wall clock
     aos_pred = g.rf_time["GS_STATUS"] + gs["NEXT_AOS"]
@@ -63,7 +63,7 @@ def run(g, rows):
     max_pred = gs["NEXT_MAX_ELEVATION"] / 10
     wall_deadline = time.monotonic() + gs["NEXT_AOS"] * 1.5 + 60
     check(60 < gs["NEXT_AOS"] < 600 and 200 < gs["NEXT_PASS_DURATION"] < 600 and max_pred > 30,
-          "pass predicted from 42's truth", f"AOS in {gs['NEXT_AOS']} s, {gs['NEXT_PASS_DURATION']} s long, "
+          "[TC-10.1] pass predicted from 42's truth", f"AOS in {gs['NEXT_AOS']} s, {gs['NEXT_PASS_DURATION']} s long, "
           f"max elevation {max_pred:.1f} deg")
 
     # Waiting for the pass: a telecommand at the ground and an event on board
@@ -76,7 +76,7 @@ def run(g, rows):
         record(g, rows, t0)
     aos = g.rf_time["GS_STATUS"]
     el_aos = g.gs()["ELEVATION"]
-    check(g.gs().get("CONTACT") == 1 and abs(aos - aos_pred) < 15, "AOS when predicted",
+    check(g.gs().get("CONTACT") == 1 and abs(aos - aos_pred) < 15, "[TC-10.2] AOS when predicted",
           f"{aos - aos_pred:+d} s from the prediction (simulation time, 1 s resolution), elevation {el_aos:.1f} deg, "
           f"range {g.gs()['RANGE']:.0f} km")
 
@@ -97,20 +97,20 @@ def run(g, rows):
     gs = g.gs()
     check(any("COMMS NOOP received via RF" in e for e in g.rf_events) and
           any(e.startswith("NOOP received") for e in g.rf_events[:n_ev] + g.rf_events[n_ev:]),
-          "store and forward across AOS", "the telecommand queued before AOS was executed and the event stored "
+          "[TC-10.3] store and forward across AOS", "the telecommand queued before AOS was executed and the event stored "
           "before AOS came down")
     check(g.rf_counts.get("BEACON", 0) >= 20 and abs(max_el - max_pred) < 2.0 and first_rssi is not None and
           rssi_at_max is not None and rssi_at_max >= first_rssi + 5,
-          "pass: beacons, culmination, link budget",
+          "[TC-10.4] pass: beacons, culmination, link budget",
           f"{g.rf_counts.get('BEACON', 0)} beacons; max elevation {max_el:.1f} deg (predicted {max_pred:.1f}); "
           f"RSSI {first_rssi} dBm after AOS, {rssi_at_max} dBm at culmination; {gs['DOWN_FRAMES']} frames "
           f"delivered, {gs['DOWN_LOST']} lost")
-    check(abs(los - los_pred) < 15 and abs((los - aos) - (los_pred - aos_pred)) < 15, "LOS when predicted",
+    check(abs(los - los_pred) < 15 and abs((los - aos) - (los_pred - aos_pred)) < 15, "[TC-10.5] LOS when predicted",
           f"{los - los_pred:+d} s from the prediction; pass lasted {los - aos} s (predicted {los_pred - aos_pred} s)")
 
     # ---- 4. LOS on board ----
     st = g.wait_for("COMMS_STATS", 60.0, lambda f: f["CONTACT"] == 0)
-    check(st is not None, "LOS noticed on board", f"{time.monotonic() - los_wall:.0f} s after LOS")
+    check(st is not None, "[TC-10.6] LOS noticed on board", f"{time.monotonic() - los_wall:.0f} s after LOS")
     record(g, rows, t0)
 
     passed = sum(results)

@@ -98,7 +98,7 @@ def main():
     gs = g.rf_wait("GS_STATUS", 10.0, lambda f: f["RANGE"] > 0)
     check(gs is not None and gs["CONTACT"] == 0 and gs["CONTACT_MODE"] == icd.CONTACT_MODE["NEVER"] and
           gs["NEXT_AOS"] != 0xFFFFFFFF and 300 < gs["RANGE"] < 13000,
-          "ground station status, next pass predicted",
+          "[TC-09.1] ground station status, next pass predicted",
           f"elevation {gs['ELEVATION']:.1f} deg, range {gs['RANGE']:.0f} km, next pass over the ground station in "
           f"{gs['NEXT_AOS'] / 60:.1f} min ({gs['NEXT_PASS_DURATION']} s, max {gs['NEXT_MAX_ELEVATION'] / 10:.1f} deg)"
           if gs else "no GS_STATUS")
@@ -112,7 +112,7 @@ def main():
     st, gs = g.stats(), g.gs()
     check(st["CONTACT"] == 0 and st["RF_TX_FRAMES"] >= tx0 + 2 and gs["DOWN_NO_CONTACT"] >= no_contact0 + 2 and
           "BEACON" not in g.rf_counts and st["TX_QUEUE_DEPTH"] >= 1 and gs["UP_QUEUE"] == 1,
-          "out of contact: beacons unheard, data held",
+          "[TC-09.2] out of contact: beacons unheard, data held",
           f"OBC sent {st['RF_TX_FRAMES'] - tx0} beacons, ground saw {gs['DOWN_NO_CONTACT'] - no_contact0} outside "
           f"contact; {st['TX_QUEUE_DEPTH']} packets waiting on board, {gs['UP_QUEUE']} telecommand at the ground, "
           f"airtime {st['DUTY_CYCLE'] / 10:.1f} %")
@@ -125,12 +125,12 @@ def main():
            any("NOOP received" in e and "COMMS" not in e for e in g.rf_events))
     check(hk is not None and any("COMMS NOOP received via RF" in e for e in g.rf_events) and
           any(e.startswith("NOOP received") for e in g.rf_events) and g.gs()["UP_QUEUE"] == 0,
-          "AOS: stored data down, queued command up",
+          "[TC-09.3] AOS: stored data down, queued command up",
           f"OBC in contact {time.monotonic() - t_aos:.1f} s after AOS; on-board events delivered: "
           f"{len(g.rf_events)}; the COMMS_NOOP queued before AOS was executed")
     b0 = g.rf_counts.get("BEACON", 0)
     g.pump(21.0)
-    check(g.rf_counts.get("BEACON", 0) - b0 >= 2, "beacons heard in contact",
+    check(g.rf_counts.get("BEACON", 0) - b0 >= 2, "[TC-09.4] beacons heard in contact",
           f"{g.rf_counts.get('BEACON', 0) - b0} in 21 s, last: mode {g.rf_latest['BEACON']['MODE']}, "
           f"uptime {g.rf_latest['BEACON']['UPTIME']} s, RSSI {g.gs()['LAST_RSSI']} dBm, "
           f"SNR {g.gs()['LAST_SNR'] / 4:.1f} dB")
@@ -142,7 +142,7 @@ def main():
     rtt = time.monotonic() - t0
     g.rf_send("OBC_DOWNLINK_PACKET", TLM_MID=icd.TLM["EPS_SIM"][0])
     eps = g.rf_wait("EPS_SIM", 10.0)
-    check(rep is not None and eps is not None, "ping and packet on request over RF",
+    check(rep is not None and eps is not None, "[TC-09.5] ping and packet on request over RF",
           f"PING_REPLY after {rtt:.2f} s round trip; EPS_SIM on request: battery {eps['BATT_V']:.2f} V"
           if rep and eps else f"ping {rep is not None}, EPS_SIM {eps is not None}")
 
@@ -153,7 +153,7 @@ def main():
     g.rf_send("COMMS_NOOP")
     g.rf_send("COMMS_NOOP")
     st = g.wait_for("COMMS_STATS", 10.0, lambda f: f["RF_CRC_ERRORS"] >= crc0 + 2)
-    check(st is not None, "corrupted uplink frames rejected (CRC)",
+    check(st is not None, "[TC-09.6] corrupted uplink frames rejected (CRC)",
           f"OBC RF_CRC_ERRORS {crc0} -> {g.stats()['RF_CRC_ERRORS']}")
 
     # ---- 6. Frame loss on the link ----
@@ -163,7 +163,7 @@ def main():
     g.rf_send("GS_SET_LOSS", LOSS=0)
     gs = g.rf_wait("GS_STATUS", 5.0, lambda f: f["LOSS_RATE"] == 0)
     lost, down = g.gs()["DOWN_LOST"] - lost0, g.gs()["DOWN_FRAMES"] - down0
-    check(lost >= 1 and down >= 1, "50 % frame loss: some frames lost, some through",
+    check(lost >= 1 and down >= 1, "[TC-09.7] 50 % frame loss: some frames lost, some through",
           f"{lost} lost, {down} delivered in 60 s")
 
     # ---- 7. LOS: the spacecraft notices the silence ----
@@ -171,7 +171,7 @@ def main():
     contact_mode(g, "NEVER")
     t_los = time.monotonic()
     st = g.wait_for("COMMS_STATS", 60.0, lambda f: f["CONTACT"] == 0)
-    check(st is not None and any("RF contact lost" in e[2] for e in g.events[n:]), "LOS: contact lost on board",
+    check(st is not None and any("RF contact lost" in e[2] for e in g.events[n:]), "[TC-09.8] LOS: contact lost on board",
           f"after {time.monotonic() - t_los:.0f} s without hails (45 s timeout)")
 
     # ---- 8. Beacon period: off, invalid, back on ----
@@ -185,7 +185,7 @@ def main():
     g.send("COMMS_SET_BEACON_PERIOD", PERIOD=10)
     st = g.wait_for("COMMS_STATS", 5.0, lambda f: f["BEACON_PERIOD"] == 10)
     check(tx_off == 0 and st is not None and g.latest["OBC_HK"][1]["CMD_REJECT_COUNT"] == rejects + 1,
-          "beacon off, 3 s rejected, back to 10 s", f"{tx_off} frames sent in 15 s with the beacon off")
+          "[TC-09.9] beacon off, 3 s rejected, back to 10 s", f"{tx_off} frames sent in 15 s with the beacon off")
 
     passed = sum(results)
     print(f"---- {passed} passed, {len(results) - passed} failed ----")

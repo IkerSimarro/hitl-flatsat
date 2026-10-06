@@ -14,25 +14,25 @@ rescue StandardError => e
   puts "FAIL #{name}: #{e.message.lines.first.strip}"
 end
 
-step('telemetry arriving (OBC_HK)') { wait_check('FLATSAT OBC_HK UPTIME > 0', 90) }
+step('[TC-11.1] telemetry arriving (OBC_HK)') { wait_check('FLATSAT OBC_HK UPTIME > 0', 90) }
 
 # NOS3's 2.8 deg/s deployment tip-off starts automatic detumbling; this test is about commanding, so it turns
 # automatic mode transitions off (tests/system/test_adcs.py covers them)
-step('automatic mode transitions off') do
+step('[TC-11.2] automatic mode transitions off') do
   cmd("FLATSAT OBC_SET_AUTO_MODES with STATE 'OFF'")
   wait_check('FLATSAT ADCS_STATE AUTO_MODES == 0', 5)
 end
 
-step('all six sensors valid') { wait_check('FLATSAT ADCS_SENSORS VALID_MASK == 63', 30) }
+step('[TC-11.3] all six sensors valid') { wait_check('FLATSAT ADCS_SENSORS VALID_MASK == 63', 30) }
 
-step('NOOP accepted (checksum filled in by the interface)') do
+step('[TC-11.4] NOOP accepted (checksum filled in by the interface)') do
   count = tlm('FLATSAT OBC_HK CMD_ACCEPT_COUNT')
   cmd('FLATSAT OBC_NOOP')
   wait_check("FLATSAT OBC_HK CMD_ACCEPT_COUNT == #{count + 1}", 5)
   wait_check("FLATSAT OBC_HK CMD_REJECT_COUNT == 0", 1)
 end
 
-step('mode change to TEST and back') do
+step('[TC-11.5] mode change to TEST and back') do
   cmd("FLATSAT OBC_SET_MODE with MODE 'TEST'")
   wait_check("FLATSAT OBC_HK MODE == 'TEST'", 5)
   cmd("FLATSAT OBC_SET_MODE with MODE 'SAFE'")
@@ -40,28 +40,28 @@ step('mode change to TEST and back') do
   wait_check("FLATSAT OBC_HK MODE_REASON == 'COMMAND'", 1)
 end
 
-step('ping reply') do
+step('[TC-11.6] ping reply') do
   cmd('FLATSAT OBC_PING with TOKEN 12648430')
   wait_check('FLATSAT PING_REPLY TOKEN == 12648430', 5)
 end
 
-step('event message received') do
+step('[TC-11.7] event message received') do
   cmd('FLATSAT ADCS_NOOP')
   wait_check("FLATSAT EVENT TEXT == 'ADCS NOOP received'", 5)
 end
 
-step('42 truth reaching COSMOS (SIM_42_TRUTH)') { wait_check('SIM_42_TRUTH SIM_42_TRUTH_DATA YEAR == 2025', 10) }
+step('[TC-11.8] 42 truth reaching COSMOS (SIM_42_TRUTH)') { wait_check('SIM_42_TRUTH SIM_42_TRUTH_DATA YEAR == 2025', 10) }
 
 # The radio path: COSMOS target FLATSAT_RF through the ground station software (FlatSat ICD 7)
-step('ground station status on FLATSAT_RF') { wait_check('FLATSAT_RF GS_STATUS RANGE > 0', 15) }
+step('[TC-11.9] ground station status on FLATSAT_RF') { wait_check('FLATSAT_RF GS_STATUS RANGE > 0', 15) }
 
-step('contact from COSMOS: beacon over the radio') do
+step('[TC-11.10] contact from COSMOS: beacon over the radio') do
   cmd("FLATSAT_RF GS_SET_CONTACT_MODE with MODE 'ALWAYS', ON_TIME 0, OFF_TIME 0")
   wait_check('FLATSAT_RF GS_STATUS CONTACT == 1', 5)
   wait_check('FLATSAT_RF BEACON UPTIME > 0', 15)
 end
 
-step('command over the radio, confirmed in the next beacon') do
+step('[TC-11.11] command over the radio, confirmed in the next beacon') do
   count = tlm('FLATSAT OBC_HK CMD_ACCEPT_COUNT')
   cmd('FLATSAT_RF COMMS_NOOP')
   wait_check("FLATSAT OBC_HK CMD_ACCEPT_COUNT == #{count + 1}", 10)

@@ -109,9 +109,34 @@ static void truth_update(void)
 static int passes;
 static int failures;
 
+/* Test procedure step IDs (docs/test/verification.yaml, TC-04) */
+static const char *step_id(const char *name)
+{
+    static const char *const ids[][2] = {
+        {"umbilical link", "TC-04.1"},          {"simulation time", "TC-04.2"},
+        {"42 truth stream", "TC-04.3"},         {"IMU (CAN)", "TC-04.4"},
+        {"magnetometer (SPI)", "TC-04.5"},      {"coarse sun sensors (I2C)", "TC-04.6"},
+        {"fine sun sensor (SPI)", "TC-04.7"},   {"star tracker (UART)", "TC-04.8"},
+        {"reaction wheels: momentum", "TC-04.9"}, {"reaction wheels (UART)", "TC-04.9"},
+        {"reaction wheels: torque", "TC-04.10"}, {"EPS housekeeping (I2C)", "TC-04.11"},
+        {"EPS switch command (I2C)", "TC-04.12"}, {"magnetorquers (bridge)", "TC-04.13"},
+        {"GPS (UART)", "TC-04.14"},
+    };
+    size_t i;
+
+    for (i = 0; i < sizeof(ids) / sizeof(ids[0]); i++)
+    {
+        if (strcmp(ids[i][0], name) == 0)
+        {
+            return ids[i][1];
+        }
+    }
+    return "TC-04.?";
+}
+
 static void result(int ok, const char *name, const char *detail)
 {
-    printf("%s %-28s %s\n", ok ? "PASS" : "FAIL", name, detail);
+    printf("%s [%s] %-28s %s\n", ok ? "PASS" : "FAIL", step_id(name), name, detail);
     if (ok)
     {
         passes++;

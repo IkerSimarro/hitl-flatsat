@@ -89,25 +89,25 @@ def main():
     g.counts.clear()
     g.pump(5.0)
     hk_rate = g.counts.get("OBC_HK", 0) / 5.0
-    check(g.wait_for("OBC_HK", 20.0) is not None and 0.6 <= hk_rate <= 1.4, "OBC_HK at 1 Hz",
+    check(g.wait_for("OBC_HK", 20.0) is not None and 0.6 <= hk_rate <= 1.4, "[TC-05.1] OBC_HK at 1 Hz",
           f"{hk_rate:.1f} Hz, packets seen: {dict(sorted(g.counts.items()))}")
 
     hdr, hk = g.latest["OBC_HK"]
     check(hk["MODE"] == icd.MODE["SAFE"] and hk["TIME_SOURCE"] == icd.TIME_SOURCE["UMBILICAL"],
-          "boot state", f"mode {hk['MODE']} (SAFE), time source {hk['TIME_SOURCE']} (UMBILICAL), "
+          "[TC-05.2] boot state", f"mode {hk['MODE']} (SAFE), time source {hk['TIME_SOURCE']} (UMBILICAL), "
           f"packet time J2000 {hdr['seconds']} s")
 
     # Sensors all valid within a couple of acquisition cycles (GPS starts 10 s into the simulation)
     sens = g.wait_for("ADCS_SENSORS", 15.0, lambda f: f["VALID_MASK"] == 0x3F)
     mask = g.latest.get("ADCS_SENSORS", ({}, {"VALID_MASK": 0}))[1]["VALID_MASK"]
-    check(sens is not None, "all sensors valid", f"valid mask 0x{mask:02X} (expected 0x3F)")
+    check(sens is not None, "[TC-05.3] all sensors valid", f"valid mask 0x{mask:02X} (expected 0x3F)")
     if sens:
         rate = [sens[f"IMU_RATE_{i}"] for i in range(3)]
         mag = [sens[f"MAG_{i}"] * 1e6 for i in range(3)]
         print(f"     body rate {[round(r * 57.2958, 3) for r in rate]} deg/s, field {[round(m, 2) for m in mag]} uT")
 
     eps = g.wait_for("EPS_SIM", 3.0)
-    check(eps is not None and 10 < eps["BATT_V"] < 40, "EPS_SIM telemetry",
+    check(eps is not None and 10 < eps["BATT_V"] < 40, "[TC-05.4] EPS_SIM telemetry",
           f"battery {eps['BATT_V']:.2f} V, solar array {eps['SA_V']:.2f} V" if eps else "missing")
 
     # NOOP: accepted, counted, event raised
@@ -116,7 +116,7 @@ def main():
     g.pump(1.5)
     after = g.hk()
     check(after["CMD_ACCEPT_COUNT"] == before + 1 and after["LAST_CMD_FC"] == 0 and
-          any("NOOP" in e[2] for e in g.events), "OBC_NOOP", f"accept count {before} -> {after['CMD_ACCEPT_COUNT']}")
+          any("NOOP" in e[2] for e in g.events), "[TC-05.5] OBC_NOOP", f"accept count {before} -> {after['CMD_ACCEPT_COUNT']}")
 
     # Corrupted checksum: rejected with an event
     before = after["CMD_REJECT_COUNT"]
@@ -126,7 +126,7 @@ def main():
     g.pump(1.5)
     after = g.hk()
     check(after["CMD_REJECT_COUNT"] == before + 1 and any("bad checksum" in e[2] for e in g.events),
-          "bad checksum rejected", f"reject count {before} -> {after['CMD_REJECT_COUNT']}")
+          "[TC-05.6] bad checksum rejected", f"reject count {before} -> {after['CMD_REJECT_COUNT']}")
 
     # Wrong length for a known command: rejected
     before = after["CMD_REJECT_COUNT"]
@@ -140,7 +140,7 @@ def main():
     g.send(None, raw=bytes(short))
     g.pump(1.5)
     after = g.hk()
-    check(after["CMD_REJECT_COUNT"] == before + 1, "wrong-length command rejected",
+    check(after["CMD_REJECT_COUNT"] == before + 1, "[TC-05.7] wrong-length command rejected",
           f"reject count {before} -> {after['CMD_REJECT_COUNT']}")
 
     # Mode changes: SAFE -> TEST allowed; TEST -> DETUMBLE refused; TEST -> SAFE allowed
@@ -154,7 +154,7 @@ def main():
     g.pump(1.5)
     m3 = g.hk()
     check(m1 == icd.MODE["TEST"] and m2 == icd.MODE["TEST"] and m3["MODE"] == icd.MODE["SAFE"] and
-          m3["MODE_REASON"] == icd.MODE_REASON["COMMAND"], "mode transitions",
+          m3["MODE_REASON"] == icd.MODE_REASON["COMMAND"], "[TC-05.8] mode transitions",
           f"SAFE->TEST {m1}, TEST->DETUMBLE refused (still {m2}), TEST->SAFE {m3['MODE']}")
 
     # Ping: each reply carries its token; round trip ground -> bridge -> OBC -> bridge -> ground
@@ -171,7 +171,7 @@ def main():
     detail = (f"{len(rtts)}/20 replies, round trip min {rtts[0]:.1f} / median {rtts[len(rtts) // 2]:.1f} / "
               f"max {rtts[-1]:.1f} ms" if rtts else "no replies")
     # Commands are executed by a 50 ms task, so up to ~50 ms plus transport is expected
-    check(len(rtts) == 20 and rtts[-1] < 100, "OBC_PING x20", detail)
+    check(len(rtts) == 20 and rtts[-1] < 100, "[TC-05.9] OBC_PING x20", detail)
 
     # Telemetry rate change: EPS_SIM off, then back to 1 s
     g.send("OBC_SET_TLM_PERIOD", TLM_MID=icd.TLM["EPS_SIM"][0], PERIOD=0)
@@ -184,20 +184,20 @@ def main():
     g.counts.clear()
     g.pump(3.0)
     on = g.counts.get("EPS_SIM", 0)
-    check(off == 0 and on >= 2, "OBC_SET_TLM_PERIOD", f"EPS_SIM packets in 3 s: off {off}, back on {on}")
+    check(off == 0 and on >= 2, "[TC-05.10] OBC_SET_TLM_PERIOD", f"EPS_SIM packets in 3 s: off {off}, back on {on}")
 
     # Simulated EPS switch round trip, confirmed in EPS_SIM
     g.send("EPS_SIM_SWITCH", SWITCH_ID=7, STATE=icd.SWITCH_STATE["ON"])
     on = g.wait_for("EPS_SIM", 4.0, lambda f: f["SWITCH_MASK"] & 0x80)
     g.send("EPS_SIM_SWITCH", SWITCH_ID=7, STATE=icd.SWITCH_STATE["OFF"])
     off = g.wait_for("EPS_SIM", 4.0, lambda f: not f["SWITCH_MASK"] & 0x80)
-    check(on is not None and off is not None, "EPS_SIM_SWITCH", "switch 7 on then off, seen in EPS_SIM")
+    check(on is not None and off is not None, "[TC-05.11] EPS_SIM_SWITCH", "switch 7 on then off, seen in EPS_SIM")
 
     # Manual torquer command refused outside TEST mode
     before = g.hk()["CMD_REJECT_COUNT"]
     g.send("ADCS_TRQ_MANUAL", TORQUER=0, DUTY=5000)
     g.pump(1.5)
-    check(g.hk()["CMD_REJECT_COUNT"] == before + 1, "TRQ_MANUAL refused in SAFE", "rejected with an event")
+    check(g.hk()["CMD_REJECT_COUNT"] == before + 1, "[TC-05.12] TRQ_MANUAL refused in SAFE", "rejected with an event")
 
     passed = sum(results)
     print(f"---- {passed} passed, {len(results) - passed} failed ----")
