@@ -77,6 +77,8 @@ See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.m
 
 The FlatSat is verified against eight [system requirements](docs/requirements/REQUIREMENTS.md) (detumble, sun pointing, fault response, node and bus health, power, commanding, RF link, physical wheel). The [test plan](docs/test/TEST_PLAN.md) describes the approach. The [test procedures](docs/test/TEST_PROCEDURES.md) list fifteen test cases, each with numbered steps and pass criteria. Every step traces to a requirement, and each automated check prints its step ID ("PASS [TC-08.3] ..."). The [test report](docs/test/report/TEST_REPORT.md) gives the latest campaign's results, plots and traceability matrix. Defects found along the way are in the [NCR log](docs/ncr/NCR_LOG.md).
 
+**Latest campaign (6 October 2026):** 104 of 104 automated steps passed and all eight requirements are verified, including a full orbit without intervention: sun pointing within 0.04° in sunlight, the eclipse detected within 1 s. The benchmark against NASA's reference attitude control (TC-15) is blocked by [NCR-015](docs/ncr/NCR_LOG.md#ncr-015).
+
 ```bash
 tests/run_all.sh            # the regression campaign, with a summary table and a test report (about 30 minutes)
 tests/run_all.sh all        # also the one-orbit endurance test (about 2½ hours)

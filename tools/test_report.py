@@ -114,8 +114,8 @@ def plots(data, out):
                     start = None
                 if start is None and m is not None:
                     start = i
-        fig.suptitle("TC-08: detumble and sun pointing in the loop with 42\n(mode: SAFE grey, DETUMBLE orange, "
-                     "SUN_POINT green, LOW_POWER yellow; from 222 s, injected IMU failure and low battery)")
+        fig.suptitle("TC-08: detumble and sun pointing in the loop with 42\nmode: SAFE grey, DETUMBLE orange, "
+                     "SUN_POINT green, LOW_POWER yellow (the last two: injected faults)", fontsize=10)
         fig.tight_layout()
         fig.savefig(out / "tc08_attitude.png")
         plt.close(fig)
@@ -242,7 +242,13 @@ def report(runs, out):
          f"| Generated | {datetime.date.today().isoformat()} by `tools/test_report.py` |", "",
          "## 1. Summary", "",
          f"**{n_pass} of {len(all_steps)} procedure steps passed**, {n_fail} failed, "
-         f"{len(all_steps) - n_run} not run.", ""]
+         f"{len(all_steps) - n_run} not run."]
+    idle = [tc for tc in v["test_cases"] if not any(st["id"] in results for st in tc["steps"])]
+    if idle:
+        o[-1] += " Not run: " + "; ".join(
+            f"{tc['id']} ({len(tc['steps'])} steps{', ' + tc['status'] if tc.get('status') else ''}"
+            f"{', informative' if tc.get('informative') else ''})" for tc in idle) + "."
+    o.append("")
 
     o += ["| Requirement | Verdict | Steps passed |", "|---|---|---|"]
     verdict_steps = [st for tc in v["test_cases"] if not tc.get("informative") for st in tc["steps"]]
@@ -255,11 +261,12 @@ def report(runs, out):
     def duration(st):
         return f"{st['seconds'] // 60} min {st['seconds'] % 60} s"
     later = {st["name"]: (r.name, st) for r in retests for st in summary_of(r).get("stages", [])}
-    o += ["", "| Stage | Result | Duration | Later run |", "|---|---|---|---|"]
+    extra = " Later run |" if later else ""
+    o += ["", "| Stage | Result | Duration |" + extra, "|---|---|---|" + ("---|" if later else "")]
     for st in summary.get("stages", []):
         again = later.pop(st["name"], None)
-        o.append(f"| `{st['name']}` | {ICON.get(st['result'], st['result'])} | {duration(st)} | "
-                 + (f"{ICON.get(again[1]['result'])} in `{again[0]}`" if again else "") + " |")
+        o.append(f"| `{st['name']}` | {ICON.get(st['result'], st['result'])} | {duration(st)} |"
+                 + ((f" {ICON.get(again[1]['result'])} in `{again[0]}` |" if again else " |") if extra else ""))
     for name, (run_name, st) in later.items():  # stages only in a later run
         o.append(f"| `{name}` | – | – | {ICON.get(st['result'])} in `{run_name}` ({duration(st)}) |")
 

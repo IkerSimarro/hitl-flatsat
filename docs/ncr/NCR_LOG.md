@@ -431,7 +431,7 @@ The wheel simulators' logs show the ADCS commanding wheel torques of up to ±16.
 - TC-05: the step IDs were removed from the command names; no other script had the same edit (checked with a search).
 - TC-14.5: a fault is now any event of WARNING severity or above, from the severity field the OBC sends with each event. The procedure's pass criterion was updated to say so.
 
-**Verification.** Both stages were rerun after the correction (`tests/run_all.sh umbilical orbit`). The test report lists the retest next to the campaign result.
+**Verification.** The whole campaign was rerun on the corrected scripts (`tests/run_all.sh all`, run `run-20261006-170641`, the one in the [test report](../test/report/TEST_REPORT.md)): TC-05 passed 12 of 12 steps and TC-14 5 of 5. Over the orbit the OBC raised three events, all INFO.
 
 **Lesson.** A script edit made by search and replace is a change to the test: rerun the script before the campaign. A pass criterion should test a defined attribute (here the event severity), not the wording of a message.
 
