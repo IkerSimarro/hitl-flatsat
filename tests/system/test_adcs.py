@@ -37,7 +37,7 @@ results = []
 
 def check(ok, name, detail):
     results.append(bool(ok))
-    print(f"{'PASS' if ok else 'FAIL'} {name:44s} {detail}", flush=True)
+    print(f"{'PASS' if ok else 'FAIL'} {name:44s}  {detail}", flush=True)
 
 
 def norm(v):

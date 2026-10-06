@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Regression campaign: runs every test stage in order and prints a summary table. Needs Docker, the NOS3
-# image and a built NOS3 (make config && make, scripts/gsw/gsw_cosmos_build.sh). Takes about 75 minutes (3 hours with the orbit).
+# image and a built NOS3 (make config && make, scripts/gsw/gsw_cosmos_build.sh). Takes about 30 minutes (2½ hours with the orbit).
 #
 # Every check prints "PASS [TC-nn.m] ..." or "FAIL [TC-nn.m] ...", the test procedure step it verifies
 # (docs/test/verification.yaml). Each run leaves in tests/logs/run-<time>/: one log per stage, the stage's SIL
@@ -16,6 +16,9 @@ cd "$ROOT" || exit 1
 IMAGE=ivvitc/nos3-64:20260619
 LOG=$ROOT/tests/logs/run-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$LOG"
+# The software under test, recorded before any stage runs (for the test report)
+export SUT_COMMIT=$(git rev-parse --short HEAD) SUT_NOS3_COMMIT=$(git -C nos3 rev-parse --short HEAD)
+export SUT_DIRTY=$(git status --porcelain --untracked-files=no | head -c1)
 NODES='sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&'
 
 # A procedure step run as a command (the unit stages): prints its PASS/FAIL line, remembers a failure
@@ -85,17 +88,14 @@ echo "logs in $LOG"
 
 # Machine-readable summary for the test report (tools/test_report.py)
 python3 - "$LOG" "${NAMES[@]}" -- "${RESULTS[@]}" -- "${TIMES[@]}" <<'EOF'
-import json, os, platform, subprocess, sys, datetime
+import json, os, platform, sys, datetime
 log, rest = sys.argv[1], sys.argv[2:]
 i = rest.index("--"); names, rest = rest[:i], rest[i + 1:]
 j = rest.index("--"); results, times = rest[:j], rest[j + 1:]
-def git(*a):
-    return subprocess.run(["git", *a], capture_output=True, text=True).stdout.strip()
 summary = {
     "started": os.path.basename(log)[4:], "finished": datetime.datetime.now().isoformat(timespec="seconds"),
     "host": f"{platform.node()} ({platform.system()} {platform.release()}, {os.cpu_count()} CPUs)",
-    "commit": git("rev-parse", "--short", "HEAD"), "dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
-    "nos3_commit": git("-C", "nos3", "rev-parse", "--short", "HEAD"),
+    "commit": os.environ["SUT_COMMIT"], "dirty": bool(os.environ["SUT_DIRTY"]), "nos3_commit": os.environ["SUT_NOS3_COMMIT"],
     "stages": [{"name": n, "result": r, "seconds": int(t), "log": n.replace(":", "-") + ".log"}
                for n, r, t in zip(names, results, times)],
 }

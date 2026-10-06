@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Writes the test report of one campaign run (tests/run_all.sh).
 
-    tools/test_report.py [RUN_DIR [RETEST_DIR ...]] [--out DIR]
+    tools/test_report.py [RUN_DIR [LATER_DIR ...]] [--out DIR]
 
 RUN_DIR defaults to the latest tests/logs/run-*; the report goes to RUN_DIR/report unless --out is given (the
-published report is docs/test/report). RETEST_DIRs are later runs of some of the stages (tests/run_all.sh <words>),
-after a fix: their results replace the campaign's for those stages, and the report lists both. Reads the run's stage logs ("PASS [TC-nn.m] ..." lines), its
+published report is docs/test/report). LATER_DIRs are later runs of some of the stages (tests/run_all.sh <words>): a
+retest after a fix, or a long stage run on its own. Their results replace the campaign's for those stages, and the
+report lists both. Reads the run's stage logs ("PASS [TC-nn.m] ..." lines), its
 summary.json and recorded data (<stage>.d/*.csv), docs/test/verification.yaml and the NCR log. Needs matplotlib:
 run it in the flatsat-report image (tools/report/Dockerfile), as tests/run_all.sh does.
 """
@@ -67,6 +68,12 @@ def num(x):
         return None
 
 
+def positive(x):
+    """For a logarithmic axis: zero and missing values are left out of the line."""
+    v = num(x)
+    return v if v is not None and v > 0 else float("nan")
+
+
 # ---- Plots ----
 
 def plots(data, out):
@@ -87,14 +94,15 @@ def plots(data, out):
         a1.axhline(2.0, color="gray", ls="--", lw=1, label="SYS-01 limit 2 deg/s")
         a1.set_ylabel("deg/s")
         a1.legend(loc="upper right")
-        a2.plot(t, [num(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
-        a2.plot(t, [num(r["err_obc_deg"]) for r in rows], color="#ff9896", ls=":", label="OBC estimate")
+        a2.plot(t, [positive(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
+        a2.plot(t, [positive(r["err_obc_deg"]) for r in rows], color="#ff9896", ls=":", label="OBC estimate")
         a2.axhline(5.0, color="gray", ls="--", lw=1, label="SYS-02 limit 5 deg")
         a2.set_ylabel("deg")
         a2.set_yscale("log")
         a2.set_xlabel("time from test start, s")
         a2.legend(loc="upper right")
-        modes = {"1": ("DETUMBLE", "#fde0c5"), "2": ("SUN_POINT", "#d5f5e3")}
+        modes = {"0": ("SAFE", "#e8e8e8"), "1": ("DETUMBLE", "#fde0c5"), "2": ("SUN_POINT", "#d5f5e3"),
+                 "3": ("LOW_POWER", "#fff3b0")}
         for ax in (a1, a2):
             start = None
             for i, r in enumerate(rows + [{"mode": None, "t_s": rows[-1]["t_s"]}]):
@@ -106,7 +114,8 @@ def plots(data, out):
                     start = None
                 if start is None and m is not None:
                     start = i
-        fig.suptitle("TC-08: detumble and sun pointing in the loop with 42 (shading: DETUMBLE, SUN_POINT)")
+        fig.suptitle("TC-08: detumble and sun pointing in the loop with 42\n(mode: SAFE grey, DETUMBLE orange, "
+                     "SUN_POINT green, LOW_POWER yellow; from 222 s, injected IMU failure and low battery)")
         fig.tight_layout()
         fig.savefig(out / "tc08_attitude.png")
         plt.close(fig)
@@ -153,13 +162,13 @@ def plots(data, out):
     if rows:
         t = [num(r["t_s"]) / 60 for r in rows]
         fig, (a1, a2) = plt.subplots(2, 1, sharex=True, figsize=(9, 6))
-        a1.plot(t, [num(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
+        a1.plot(t, [positive(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
         a1.set_ylabel("deg")
         a1.set_yscale("log")
         a1.legend(loc="upper right")
         a2.plot(t, [num(r["wheel_momentum_pct"]) for r in rows], color="#8c564b", label="wheel momentum, % of capacity")
         a2.set_ylabel("%")
-        a2.set_xlabel("time, min")
+        a2.set_xlabel("time from convergence, min (wall clock: the simulation runs about 10 % slower)")
         a2.legend(loc="upper right")
         for ax in (a1, a2):
             ecl = [r["eclipse_truth"] == "1" for r in rows]
@@ -201,7 +210,7 @@ def report(runs, out):
     v = yaml.safe_load((ROOT / "docs/test/verification.yaml").read_text())
     summary = summary_of(run)
     results = {}
-    for r in runs:  # a retest replaces the results of the stages it ran
+    for r in runs:  # a later run (a retest, or a long stage run on its own) replaces the stages it ran
         results.update(read_results(r))
     ncrs = read_ncrs()
 
@@ -225,7 +234,7 @@ def report(runs, out):
     for r in retests:
         sm = summary_of(r)
         stages = ", ".join(f"`{st['name']}`" for st in sm.get("stages", []))
-        o.append(f"| Retest | `{r.name}` (finished {sm.get('finished', '?')}): {stages}, on {software(sm)} |")
+        o.append(f"| Later run | `{r.name}` (finished {sm.get('finished', '?')}): {stages}, on {software(sm)} |")
     o += [f"| Environment | Software-in-the-loop on {summary.get('host', '?')}; NOS3 image `ivvitc/nos3-64:20260619`, "
          f"COSMOS 4.5.0 |",
          f"| Plan and procedures | [TEST_PLAN.md]({doc('docs/test/TEST_PLAN.md')}), "
@@ -243,13 +252,16 @@ def report(runs, out):
         o.append(f"| [{r['id']}]({doc('docs/requirements/REQUIREMENTS.md')}#{r['id'].lower()}) {r['title']} | "
                  f"{verdict(ids, results, planned)} | {ok} / {len(ids)} |")
 
-    retested = {st["name"]: (r.name, st) for r in retests for st in summary_of(r).get("stages", [])}
-    o += ["", "| Stage | Result | Duration | Retest |", "|---|---|---|---|"]
+    def duration(st):
+        return f"{st['seconds'] // 60} min {st['seconds'] % 60} s"
+    later = {st["name"]: (r.name, st) for r in retests for st in summary_of(r).get("stages", [])}
+    o += ["", "| Stage | Result | Duration | Later run |", "|---|---|---|---|"]
     for st in summary.get("stages", []):
-        again = retested.get(st["name"])
-        o.append(f"| `{st['name']}` | {ICON.get(st['result'], st['result'])} | {st['seconds'] // 60} min "
-                 f"{st['seconds'] % 60} s | " + (f"{ICON.get(again[1]['result'])} in `{again[0]}`" if again else "")
-                 + " |")
+        again = later.pop(st["name"], None)
+        o.append(f"| `{st['name']}` | {ICON.get(st['result'], st['result'])} | {duration(st)} | "
+                 + (f"{ICON.get(again[1]['result'])} in `{again[0]}`" if again else "") + " |")
+    for name, (run_name, st) in later.items():  # stages only in a later run
+        o.append(f"| `{name}` | – | – | {ICON.get(st['result'])} in `{run_name}` ({duration(st)}) |")
 
     o += ["", "## 2. Traceability", "", "Each requirement, the steps that verify it, and their results.", "",
           "| Requirement | Step | Check | Result |", "|---|---|---|---|"]

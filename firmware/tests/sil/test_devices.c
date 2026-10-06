@@ -136,7 +136,7 @@ static const char *step_id(const char *name)
 
 static void result(int ok, const char *name, const char *detail)
 {
-    printf("%s [%s] %-28s %s\n", ok ? "PASS" : "FAIL", step_id(name), name, detail);
+    printf("%s [%s] %-28s  %s\n", ok ? "PASS" : "FAIL", step_id(name), name, detail);
     if (ok)
     {
         passes++;
@@ -453,7 +453,8 @@ static void test_eps(void)
     /* Switch 7 has no device behind it in the NOS3 configuration */
     on  = dev_eps_set_switch(7, 1);
     off = dev_eps_set_switch(7, 0);
-    snprintf(d, sizeof(d), "switch 7 on -> %d, off -> %d (confirmed in housekeeping)", on, off);
+    snprintf(d, sizeof(d), "switch 7 on: %s, off: %s (read back from housekeeping)",
+             on == DEV_OK ? "confirmed" : "not confirmed", off == DEV_OK ? "confirmed" : "not confirmed");
     result(on == DEV_OK && off == DEV_OK, "EPS switch command (I2C)", d);
 }
 

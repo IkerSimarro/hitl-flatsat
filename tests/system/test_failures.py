@@ -39,7 +39,7 @@ results = []
 
 def check(ok, name, detail):
     results.append(bool(ok))
-    print(f"{'PASS' if ok else 'FAIL'} {name:50s} {detail}", flush=True)
+    print(f"{'PASS' if ok else 'FAIL'} {name:50s}  {detail}", flush=True)
 
 
 def motor_duty():

@@ -74,7 +74,7 @@ results = []
 
 def check(ok, name, detail):
     results.append(ok)
-    print(f"{'PASS' if ok else 'FAIL'} {name:34s} {detail}")
+    print(f"{'PASS' if ok else 'FAIL'} {name:34s}  {detail}")
 
 
 def main():

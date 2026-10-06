@@ -26,7 +26,7 @@ results = []
 
 def check(ok, name, detail):
     results.append(bool(ok))
-    print(f"{'PASS' if ok else 'FAIL'} {name:38s} {detail}")
+    print(f"{'PASS' if ok else 'FAIL'} {name:38s}  {detail}")
 
 
 def event_seen(g, text, since):

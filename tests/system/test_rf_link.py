@@ -28,7 +28,7 @@ results = []
 
 def check(ok, name, detail):
     results.append(bool(ok))
-    print(f"{'PASS' if ok else 'FAIL'} {name:46s} {detail}", flush=True)
+    print(f"{'PASS' if ok else 'FAIL'} {name:46s}  {detail}", flush=True)
 
 
 class RfGround(Ground):
