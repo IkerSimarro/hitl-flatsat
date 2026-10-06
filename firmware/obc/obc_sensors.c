@@ -3,6 +3,7 @@
 ** transitions between working and failed as events (so a fault produces one event, not one per cycle)
 */
 #include <stdio.h>
+#include <string.h>
 
 #include "fs_hal.h"
 #include "fs_persist.h"
@@ -22,6 +23,12 @@ static const char *const device_names[] = {"IMU", "magnetometer", "fine sun sens
 ** the ADCS set is read at 5 Hz, the rest at 1 Hz */
 static const uint8_t fault_persistence[] = {12, 12, 3, 12, 3, 3, 12, 3};
 
+/* A magnetometer frozen at its last value still answers with well-formed data (NCR-014). In orbit the field in
+** the body frame changes by ~14 nT between 5 Hz readings (2 nT resolution), whatever the attitude, so this many
+** bit-identical readings in a row mean the sensor is stuck; from then on its readings count as missed. (Not for
+** the gyro: a spacecraft spinning freely about a principal axis gives constant rates.) */
+#define MAG_STUCK_READS 10
+
 #define MISS_SUMMARY_US 60000000u /* missed reads are logged as a summary once a minute */
 
 static fs_persist_t persist[NUM_TRACKED];
@@ -37,6 +44,54 @@ static void reset_persistence(void)
     {
         fs_persist_init(&persist[i], fault_persistence[i]);
     }
+}
+
+static const char *error_text(int rc)
+{
+    switch (rc)
+    {
+        case DEV_ERR_BUS:
+            return "bus error";
+        case DEV_ERR_TIMEOUT:
+            return "no reply";
+        case DEV_ERR_FORMAT:
+            return "bad reply";
+        case DEV_ERR_STUCK:
+            return "output frozen";
+        default:
+            return "error";
+    }
+}
+
+static int mag_read_checked(dev_mag_t *out)
+{
+    static float    last[3];
+    static unsigned same;
+    dev_mag_t       m;
+    int             rc = dev_mag_read(&m);
+
+    if (rc != DEV_OK)
+    {
+        return rc;
+    }
+    if (memcmp(m.field, last, sizeof(last)) == 0)
+    {
+        if (same < MAG_STUCK_READS)
+        {
+            same++;
+        }
+    }
+    else
+    {
+        same = 0;
+        memcpy(last, m.field, sizeof(last));
+    }
+    if (same >= MAG_STUCK_READS)
+    {
+        return DEV_ERR_STUCK;
+    }
+    *out = m;
+    return DEV_OK;
 }
 
 static void update(uint16_t bit, int rc)
@@ -65,8 +120,8 @@ static void update(uint16_t bit, int rc)
     if (ev == FS_PERSIST_TRIPPED)
     {
         obc.sensor_failed |= bit;
-        obc_event(EVT_SENSOR_FAULT, FLATSAT_SEVERITY_ERROR, "%s failed: %u consecutive reads (last error %d)",
-                  device_names[idx], fault_persistence[idx], rc);
+        obc_event(EVT_SENSOR_FAULT, FLATSAT_SEVERITY_ERROR, "%s failed: %u consecutive reads (%s)",
+                  device_names[idx], fault_persistence[idx], error_text(rc));
     }
     else if (ev == FS_PERSIST_CLEARED)
     {
@@ -108,7 +163,7 @@ void obc_sensors_acquire_adcs(void)
     }
 
     update(OBC_VALID_IMU, dev_imu_read(&obc.imu));
-    update(OBC_VALID_MAG, dev_mag_read(&obc.mag));
+    update(OBC_VALID_MAG, mag_read_checked(&obc.mag));
 
     rc = dev_css_read(&obc.css);
     update(OBC_VALID_CSS, rc);

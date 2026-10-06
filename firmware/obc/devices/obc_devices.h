@@ -22,6 +22,7 @@ extern "C" {
 #define DEV_ERR_TIMEOUT (-2) /* no reply from the device in time */
 #define DEV_ERR_FORMAT  (-3) /* reply had a bad header, trailer, length or checksum */
 #define DEV_ERR_ARG     (-4) /* invalid argument */
+#define DEV_ERR_STUCK   (-5) /* well-formed replies, but the reading has stopped changing (obc_sensors.c) */
 
 /* ---- Bus allocation, from cfg/sims/sc-1-nos3-simulator.xml and the cFS platform configs ---- */
 
