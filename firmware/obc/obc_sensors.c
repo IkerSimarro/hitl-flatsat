@@ -179,12 +179,7 @@ void obc_sensors_acquire_adcs(void)
         obc.eclipse = (uint8_t)dark;
     }
 
-    rc = DEV_OK;
-    for (i = 0; i < DEV_NUM_RW && rc == DEV_OK; i++)
-    {
-        rc = dev_rw_get_momentum((uint8_t)i, &obc.rw_momentum[i]);
-    }
-    update(OBC_VALID_RW, rc);
+    update(OBC_VALID_RW, dev_rw_get_momentum_all(obc.rw_momentum));
 }
 
 /* Local log only: isolated misses are routine on a loaded machine (NCR-005), persistent ones raise events */
@@ -222,7 +217,6 @@ void obc_sensors_acquire(void)
     }
 
     update(OBC_VALID_FSS, dev_fss_read(&obc.fss));
-    update(OBC_VALID_ST, dev_st_read(&obc.st));
     update(OBC_VALID_EPS, dev_eps_read(&obc.eps));
 
     /* GPS is event-driven (obc_sensors_poll_gps); here it only goes stale */
@@ -230,6 +224,16 @@ void obc_sensors_acquire(void)
     {
         update(OBC_VALID_GPS, fs_hal_time_us() - gps_last_fix_us < GPS_STALE_US ? DEV_OK : DEV_ERR_TIMEOUT);
     }
+}
+
+/* The star tracker on its own: its reply ends only after 20 ms of silence, the longest exchange of all */
+void obc_sensors_acquire_st(void)
+{
+    if (!devices_reachable())
+    {
+        return;
+    }
+    update(OBC_VALID_ST, dev_st_read(&obc.st));
 }
 
 void obc_sensors_poll_gps(void)

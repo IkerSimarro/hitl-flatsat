@@ -121,12 +121,24 @@ int dev_radio_set_power(int8_t dbm);
 
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 
+/* UART request/reply exchanges since the last call: count, mean and longest wait for the first reply byte,
+** and mean and longest whole exchange (including the quiet time that ends a reply), in us. Starts again. */
+typedef struct
+{
+    uint32_t count, first_mean_us, first_max_us, total_mean_us, total_max_us;
+} dev_uart_timing_t;
+void dev_take_uart_timing(dev_uart_timing_t *t);
+
 #define DEV_RW_MAX_TORQUE 0.001 /* N m (42 SC_NOS3.txt) */
 #define DEV_RW_MIN_TORQUE 1e-12 /* N m: smaller torques are sent as 0 (NCR-017) */
 
 int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms);
+/* All wheels at once (one round trip); DEV_OK, or the first wheel's error */
+int dev_rw_get_momentum_all(double momentum_nms[DEV_NUM_RW]);
 /* torque on the wheel (the body feels the opposite), up to DEV_RW_MAX_TORQUE */
 int dev_rw_set_torque(uint8_t wheel, double torque_nm);
+/* All wheels at once (one round trip); out of range on any wheel: none is commanded */
+int dev_rw_set_torque_all(const double torque_nm[DEV_NUM_RW]);
 
 /* ---- EPS (generic_eps, I2C) ---- */
 

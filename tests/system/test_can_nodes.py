@@ -2,7 +2,7 @@
 """System test: the OBC with the ADCS and EPS nodes on the CAN bus, operated over the umbilical.
 
 Runs in the SIL environment with the plant model and the nodes:
-    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+    sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
                 python3 tests/system/test_can_nodes.py'
 """
 import math

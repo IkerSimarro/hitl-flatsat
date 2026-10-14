@@ -4,12 +4,14 @@
   1. mirroring: in SUN_POINT the physical wheel runs at 1/10 of simulated wheel 0
   2. wheel steps (TEST mode): settling and overshoot, from the plant's true wheel speed at 50 Hz
   3. power measurement: the EPS node's INA219 readings against the true rail voltages and currents, four loads
-  4. OBC hang (process frozen) with the wheel running: the ADCS node removes motor drive on its own
+  4. OBC hang (process frozen) with the wheel running: the ADCS node removes motor drive on its own. On the Pico
+     (SIL_UMB_DEV set) the OBC can't be frozen from outside; the bridge, which carries its CAN traffic, is frozen
+     instead: the ADCS node sees the same thing, commands stopping
 
 The plant model's truth comes from the SIL harness (shared memory, sil_harness.h). The wheel steps are recorded
 in wheel_steps.csv in the log directory, for the report. Runs in the SIL environment (about 8 minutes):
 
-    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+    sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
                 python3 tests/system/test_hardware_twin.py'
 """
 import csv
@@ -162,13 +164,14 @@ def main():
     g.wait_for("OBC_HK", 10.0, lambda f: f["NODE_ALIVE_MASK"] == 0x0E)
     wheel(g, 300)
     g.wait_for("ADCS_STATE", 6.0, lambda f: abs(f["PHYS_RW_MEAS_SPEED"] / RPM - 300) < 20)
-    subprocess.run(["pkill", "-STOP", "-f", "firmware/build/obc"], check=True)
+    frozen = "nos3-hil-bridge" if os.environ.get("SIL_UMB_DEV") else "firmware/build/obc"
+    subprocess.run(["pkill", "-STOP", "-f", frozen], check=True)
     t0, t_off = time.monotonic(), None
     while time.monotonic() - t0 < 3.0:
         if t_off is None and abs(plant.duty()) < 1e-6:
             t_off = time.monotonic() - t0
         time.sleep(0.01)
-    subprocess.run(["pkill", "-CONT", "-f", "firmware/build/obc"], check=True)
+    subprocess.run(["pkill", "-CONT", "-f", frozen], check=True)
     g.pump(5.0)
     g.send("OBC_SET_MODE", MODE=icd.MODE["SAFE"])
     check(t_off is not None and t_off < 1.5, "[TC-13.4] loss of commands (OBC frozen)",

@@ -23,6 +23,8 @@
 #   SIL_GS_ARGS         ground station options (ground/flatsat_gs.py), e.g. "--mode always" or "--loss 0.1"
 #   SIL_UMB_DEV         a real OBC's umbilical, e.g. /dev/ttyACM0 for the Pico (see firmware/hal/pico): the
 #                       bridge opens it instead of waiting for the OBC process's pty
+#   SIL_UMB_CAN         with SIL_UMB_DEV: the bridge carries this CAN interface (vcan0) to the real OBC over its
+#                       umbilical, for a Pico without its CAN board (ICD 8.1 CANBUS_*)
 #
 set -u
 
@@ -74,5 +76,5 @@ exec docker run $DOCKER_FLAGS ${SIL_DOCKER_ARGS:-} \
     -v "$ROOT:$ROOT" -v "$HOME/.nos3:$HOME/.nos3" -w "$ROOT" \
     -e SIL_LOG_DIR="${SIL_LOG_DIR:-$ROOT/sil/logs/$(date +%Y%m%d-%H%M%S)}" -e SIL_GROUND_HOST="$GROUND_HOST" \
     -e SIL_GRAPHICS="${SIL_GRAPHICS:-0}" -e SIL_INIT_RATES="${SIL_INIT_RATES:-}" -e SIL_GS_ARGS="${SIL_GS_ARGS:-}" \
-    -e SIL_NO_BRIDGE="${SIL_NO_BRIDGE:-0}" -e SIL_UMB_DEV="${SIL_UMB_DEV:-}" \
+    -e SIL_NO_BRIDGE="${SIL_NO_BRIDGE:-0}" -e SIL_UMB_DEV="${SIL_UMB_DEV:-}" -e SIL_UMB_CAN="${SIL_UMB_CAN:-}" \
     "$DBOX" "$ROOT/sil/sil_env.sh" bash -c "$*"

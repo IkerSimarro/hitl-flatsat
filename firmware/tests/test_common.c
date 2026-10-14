@@ -160,6 +160,13 @@ static void slow_task(void)
     fake_now_us += slow_cost_us;
 }
 
+static unsigned boundary_runs;
+
+static void boundary_fn(void)
+{
+    boundary_runs++;
+}
+
 static void test_sched(void)
 {
     fs_task_t tasks[] = {
@@ -199,6 +206,21 @@ static void test_sched(void)
     }
     CHECK(tasks[1].overruns > 0);
     CHECK(slow_runs <= 5);
+
+    /* The boundary function runs before every task, once per task run */
+    slow_cost_us  = 1000;
+    fast_runs     = slow_runs = 0;
+    boundary_runs = 0;
+    fs_sched_init(tasks, 2);
+    fs_sched_set_boundary(boundary_fn);
+    end = fake_now_us + 200000u;
+    while (fake_now_us < end)
+    {
+        uint32_t wait = fs_sched_run();
+        fake_now_us += wait > 0 ? wait : 1;
+    }
+    CHECK(boundary_runs == fast_runs + slow_runs && boundary_runs > 0);
+    fs_sched_set_boundary(NULL);
 }
 
 /* ---- Umbilical ---- */
@@ -299,6 +321,40 @@ static void test_umbilical(void)
     CHECK(fs_umb_trq(2, -2500) == FS_UMB_OK);
     CHECK(fake_last_type == HIL_TRQ_CMD && fake_last_bus == 2);
     CHECK(fake_last_len == 2 && (int16_t)hil_get_u16(fake_last_payload) == -2500);
+
+    /* FlatSat CAN bus over the umbilical: absent until the bridge announces it, frames read in order, frames
+       sent with their identifier and data, and a full queue drops (and counts) the excess */
+    {
+        fs_can_frame_t f  = {0x123, 2, {0xAB, 0xCD}};
+        uint8_t        up = 1, d1[2] = {1, 2}, d2[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+        unsigned       k;
+
+        CHECK(!fs_umb_canbus_present() && fs_umb_canbus_send(&f) < 0);
+        fake_bridge_inject(HIL_CANBUS_STATUS, 0, &up, 1);
+        fake_bridge_inject_addr(HIL_CANBUS_RX, 0, 0x201, d1, sizeof(d1));
+        fake_bridge_inject_addr(HIL_CANBUS_RX, 0, 0x7FF, d2, sizeof(d2));
+        fs_umb_poll();
+        CHECK(fs_umb_canbus_present());
+        CHECK(fs_umb_canbus_recv(&f) == 1 && f.id == 0x201 && f.dlc == 2 && f.data[1] == 2);
+        CHECK(fs_umb_canbus_recv(&f) == 1 && f.id == 0x7FF && f.dlc == 8 && f.data[7] == 8);
+        CHECK(fs_umb_canbus_recv(&f) == 0);
+        f.id      = 0x123;
+        f.dlc     = 2;
+        f.data[0] = 0xAB;
+        CHECK(fs_umb_canbus_send(&f) == FS_UMB_OK);
+        CHECK(fake_last_type == HIL_CANBUS_TX && fake_last_addr == 0x123 && fake_last_len == 2 &&
+              fake_last_payload[0] == 0xAB);
+        for (k = 0; k < 40; k++)
+        {
+            fake_bridge_inject_addr(HIL_CANBUS_RX, 0, 0x100 + k, d1, sizeof(d1));
+        }
+        fs_umb_poll();
+        CHECK(fs_umb_stats()->canbus_overflows == 40 - 31);
+        for (k = 0; fs_umb_canbus_recv(&f) == 1; k++)
+        {
+        }
+        CHECK(k == 31 && f.id == 0x100 + 30);
+    }
 
     /* Link goes down when nothing arrives */
     fake_now_us += FS_UMB_LINK_TIMEOUT_US + 1;

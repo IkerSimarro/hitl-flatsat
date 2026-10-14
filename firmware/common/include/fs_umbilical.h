@@ -15,6 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "fs_hal.h"
 #include "fs_time.h"
 
 #ifdef __cplusplus
@@ -47,6 +48,7 @@ typedef struct
     uint32_t timeouts;
     uint32_t bus_errors;
     uint32_t uart_overflows;
+    uint32_t canbus_overflows; /* CAN frames from the bridge dropped: the queue was full */
 } fs_umb_stats_t;
 
 void fs_umb_init(const fs_umb_handlers_t *handlers);
@@ -58,6 +60,12 @@ int fs_umb_link_up(void);
 /* How long the link has been up without interruption, 0 if it is down */
 uint64_t fs_umb_link_up_for_us(void);
 const fs_umb_stats_t *fs_umb_stats(void);
+
+/* Round trips of the I2C/SPI/CAN transactions answered since the last call (count, mean and longest, in us);
+** starts counting again. For the timing budget. */
+void fs_umb_take_txn_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us);
+/* The same for heartbeat echoes: the umbilical's own round trip, no device involved */
+void fs_umb_take_echo_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us);
 
 /* ---- NOS3 device sims ---- */
 
@@ -86,6 +94,12 @@ void   fs_umb_uart_flush(uint8_t bus);
 
 /* Magnetorquer duty in 0.01 % (-10000..10000) */
 int fs_umb_trq(uint8_t torquer, int16_t duty);
+
+/* ---- The FlatSat CAN bus over the umbilical (ICD 8.1 CANBUS_*) ----
+** For a node whose CAN board isn't fitted, the bridge can carry the bus; that node's HAL uses these. */
+int fs_umb_canbus_present(void);                       /* 1 once the bridge has announced the bus */
+int fs_umb_canbus_send(const fs_can_frame_t *frame);   /* CANBUS_TX; < 0 if the bus isn't there */
+int fs_umb_canbus_recv(fs_can_frame_t *frame);         /* 1 and the oldest received frame, 0 if none */
 
 /* ---- Packets and frames ---- */
 

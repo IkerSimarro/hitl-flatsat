@@ -7,8 +7,9 @@
 ** - commands the physical wheel at 10 Hz: it mirrors simulated wheel 0 at MIRROR_SCALE (ICD DD-05), or
 **   follows the TEST-mode override; no RW_TLM for 500 ms while commanding is a wheel fault
 ** - collects the EPS node's measurements for EPS_REAL and forwards switch and reset commands
-** Without a CAN controller (a bench set-up of the OBC alone) the nodes aren't fitted: none of this runs, and
-** nothing that needs them waits for them.
+** Without a CAN bus (a bench set-up of the OBC alone) the nodes aren't fitted: none of this runs, and nothing
+** that needs them waits for them. A bus that appears later (carried over the umbilical, fs_hal_pico.c) is
+** taken from then on.
 */
 #include <math.h>
 #include <string.h>
@@ -31,6 +32,17 @@ static uint8_t  rw_seq;
 static uint8_t  sw_seq;
 static uint64_t rw_cmd_since_us; /* when the wheel was last commanded from OFF to on, 0 = not commanding */
 static int      bus_fitted;
+
+/* The bus can appear after start-up; once there, it stays (a bus that goes quiet means the nodes are lost) */
+static int bus_check(void)
+{
+    if (!bus_fitted && fs_hal_can_present())
+    {
+        bus_fitted = 1;
+        fs_hal_log("CAN bus present: ADCS and EPS nodes monitored");
+    }
+    return bus_fitted;
+}
 
 static const char *node_name(uint8_t node)
 {
@@ -192,7 +204,7 @@ void obc_can_task_fast(void)
     int16_t              setpoint;
     uint64_t             now = fs_hal_time_us();
 
-    if (!bus_fitted)
+    if (!bus_check())
     {
         return;
     }
@@ -242,7 +254,7 @@ void obc_can_task_slow(void)
     uint64_t                now_us = fs_hal_time_us();
     unsigned                i;
 
-    if (!bus_fitted)
+    if (!bus_check())
     {
         return;
     }
@@ -284,7 +296,7 @@ void obc_can_init(void)
     bus_fitted = fs_hal_can_present();
     if (!bus_fitted)
     {
-        fs_hal_log("no CAN controller: ADCS and EPS nodes not fitted");
+        fs_hal_log("no CAN bus (yet): ADCS and EPS nodes not monitored");
     }
     fs_can_init(FLATSAT_NODE_OBC);
     fs_can_subscribe(FLATSAT_CAN_HEARTBEAT_TYPE, on_heartbeat);

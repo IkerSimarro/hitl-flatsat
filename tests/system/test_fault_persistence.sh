@@ -14,9 +14,7 @@ ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/../.." &> /dev/null && pwd )
 OBC_LOG=$SIL_LOG_DIR/obc.log
 
 "$ROOT/sil/start_nodes.sh" > /dev/null || exit 1
-"$ROOT/firmware/build/obc" --umb-pty "$SIL_UMB_PTY" > "$OBC_LOG" 2>&1 &
-OBC=$!
-trap 'kill $OBC 2> /dev/null' EXIT
+"$ROOT/sil/start_obc.sh" || exit 1
 
 imu() { python3 "$ROOT/sil/sim_cmd.py" imu-command "$1"; }
 faults() { grep -c "IMU failed" "$OBC_LOG"; }

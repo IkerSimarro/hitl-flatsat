@@ -195,6 +195,8 @@ void obc_cmd_init(void);
 void obc_cmd_enqueue(const uint8_t *pkt, size_t len, uint8_t source);
 /* Validate and execute queued commands */
 void obc_cmd_process(void);
+/* Queue waits of the commands run since the last call: count, mean and longest (us); starts again */
+void obc_cmd_take_wait_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us);
 
 /* ---- Telemetry (ICD 4) ---- */
 
@@ -251,6 +253,7 @@ void obc_sensors_init(void);
 void obc_sensors_acquire_adcs(void);
 /* 1 Hz: fine sun sensor, star tracker, EPS; GPS staleness */
 void obc_sensors_acquire(void);
+void obc_sensors_acquire_st(void);
 /* Non-blocking: parses buffered GPS data */
 void obc_sensors_poll_gps(void);
 

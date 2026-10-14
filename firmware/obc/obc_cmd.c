@@ -24,8 +24,13 @@ typedef struct
     uint8_t   data[CMD_MAX_LEN];
     size_t    len;
     fs_time_t rx_time;
+    uint64_t  rx_us;  /* for the queue wait (timing budget): the monotonic clock, unaffected by time sync */
     uint8_t   source; /* OBC_CMD_SRC_* */
 } queued_cmd_t;
+
+static uint32_t wait_count;
+static uint64_t wait_total_us;
+static uint32_t wait_max_us;
 
 static queued_cmd_t queue[CMD_QUEUE_LEN];
 static uint8_t      current_source = OBC_CMD_SRC_UMB;
@@ -62,6 +67,7 @@ void obc_cmd_enqueue(const uint8_t *pkt, size_t len, uint8_t source)
     memcpy(queue[q_head].data, pkt, len);
     queue[q_head].len     = len;
     queue[q_head].rx_time = fs_time_now();
+    queue[q_head].rx_us   = fs_hal_time_us();
     queue[q_head].source  = source;
     q_head                = next;
 }
@@ -462,7 +468,23 @@ void obc_cmd_process(void)
         queued_cmd_t c = queue[q_tail];
         q_tail         = (q_tail + 1) % CMD_QUEUE_LEN;
         current_source = c.source;
+        {
+            uint32_t w = (uint32_t)(fs_hal_time_us() - c.rx_us);
+            wait_count++;
+            wait_total_us += w;
+            wait_max_us = w > wait_max_us ? w : wait_max_us;
+        }
         execute(c.data, c.len, c.rx_time);
         current_source = OBC_CMD_SRC_UMB;
     }
+}
+
+void obc_cmd_take_wait_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us)
+{
+    *count        = wait_count;
+    *mean_us      = wait_count ? (uint32_t)(wait_total_us / wait_count) : 0;
+    *max_us       = wait_max_us;
+    wait_count    = 0;
+    wait_total_us = 0;
+    wait_max_us   = 0;
 }

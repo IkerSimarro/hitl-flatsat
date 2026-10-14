@@ -11,7 +11,7 @@ orbit and checks it against 42's truth:
   - health: no fault, no unplanned mode change, no telemetry gap
 The time series goes to orbit.csv in the log directory (the report plots it).
 
-    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+    sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
                 python3 tests/system/test_orbit.py'
 """
 import csv

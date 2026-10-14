@@ -123,38 +123,38 @@ SIL_INIT_RATES="2 -3 4" sil/sil.sh firmware/build/test_devices --umb-pty '$SIL_U
 
 # Flight computer commanding and telemetry over the umbilical, with the plant model and the ADCS and EPS
 # nodes on virtual CAN (software-in-the-loop)
-sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_obc_umbilical.py'
 
 # The CAN nodes: physical wheel speed control, power telemetry, switch and reset fault injection
-sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_can_nodes.py'
 
 # Sensor fault injection through NOS3's command bus: persistence filtering and per-bus isolation
 sil/sil.sh tests/system/test_fault_persistence.sh
 
 # The RF link through the ground station: store and forward, telecommands, corrupted frames, loss, LOS (about 4 minutes)
-SIL_GS_ARGS="--mode never --seed 1" sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+SIL_GS_ARGS="--mode never --seed 1" sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_rf_link.py'
 
 # A real pass over NASA Wallops, from 42's orbit: prediction vs reality, link budget (about 12 minutes)
 SIL_GS_ARGS="--lat 37.9402 --lon -75.4664 --alt 10 --seed 1" sil/sil.sh 'sil/start_nodes.sh &&
-            (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_rf_pass.py'
+            sil/start_obc.sh && python3 tests/system/test_rf_pass.py'
 
 # Attitude control in the loop with 42, from a tumble, checked against 42's truth (about 8 minutes)
-SIL_INIT_RATES="2 -3 4" sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+SIL_INIT_RATES="2 -3 4" sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_adcs.py'
 
 # Fault injection beyond the sensors: wheel, magnetometer, node crashes, CAN bus loss (about 8 minutes)
-sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_failures.py'
 
 # The FlatSat's own hardware against the plant model's truth: wheel steps, rail measurement, OBC hang (about 8 minutes)
-sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_hardware_twin.py'
 
 # One full orbit without intervention: pointing, eclipses, wheel momentum, health (about 100 minutes)
-sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
             python3 tests/system/test_orbit.py'
 
 # Ground segment end to end: NOS3's COSMOS configuration, headless, commanding the OBC

@@ -35,6 +35,14 @@ typedef struct
 
 static bus_slot_t bus_slots[BUS_SLOTS];
 
+/* FlatSat CAN frames from the bridge (CANBUS_RX), until the HAL reads them: a 100 ms wait for a device
+** reply collects a few at most */
+#define CANBUS_QUEUE 32
+static fs_can_frame_t canbus_queue[CANBUS_QUEUE];
+static unsigned       canbus_head; /* next to read */
+static unsigned       canbus_tail; /* next free */
+static int            canbus_announced;
+
 static fs_umb_handlers_t handlers;
 static fs_umb_stats_t    stats;
 static hil_decoder_t     decoder;
@@ -48,6 +56,18 @@ static uint8_t  next_seq;
 static uint64_t last_rx_us;
 static uint64_t link_up_since_us; /* when the current link-up period began */
 static int      in_handler;
+
+/* Transaction round trips since fs_umb_take_txn_timing() */
+static uint32_t txn_count;
+static uint64_t txn_total_us;
+static uint32_t txn_max_us;
+
+/* Heartbeat echoes: the umbilical's own round trip (the bridge echoes at once), without any device */
+static uint8_t  hb_seq;
+static uint64_t hb_sent_us;
+static uint32_t echo_count;
+static uint64_t echo_total_us;
+static uint32_t echo_max_us;
 
 /* Response the current transaction is waiting for */
 static struct
@@ -73,6 +93,8 @@ void fs_umb_init(const fs_umb_handlers_t *h)
     memset(&stats, 0, sizeof(stats));
     memset(&pending, 0, sizeof(pending));
     hil_decoder_init(&decoder);
+    canbus_head = canbus_tail = 0;
+    canbus_announced          = 0;
     for (i = 0; i < UART_SLOTS; i++)
     {
         uart_rings[i].bus  = NO_BUS;
@@ -172,6 +194,33 @@ static int send_frame(uint8_t type, uint8_t bus, uint8_t seq, uint32_t addr, con
     return FS_UMB_OK;
 }
 
+/* ---- FlatSat CAN bus over the umbilical ---- */
+
+int fs_umb_canbus_present(void)
+{
+    return canbus_announced;
+}
+
+int fs_umb_canbus_send(const fs_can_frame_t *frame)
+{
+    if (!canbus_announced || frame->dlc > 8)
+    {
+        return FS_UMB_IO;
+    }
+    return send_frame(HIL_CANBUS_TX, 0, next_seq++, frame->id, frame->data, frame->dlc);
+}
+
+int fs_umb_canbus_recv(fs_can_frame_t *frame)
+{
+    if (canbus_head == canbus_tail)
+    {
+        return 0;
+    }
+    *frame      = canbus_queue[canbus_head];
+    canbus_head = (canbus_head + 1) % CANBUS_QUEUE;
+    return 1;
+}
+
 /* ---- UART rings ---- */
 
 static uart_ring_t *find_ring(uint8_t bus)
@@ -253,6 +302,41 @@ static void dispatch(const hil_frame_t *f)
                             ((uint32_t)f->payload[2] << 16) | ((uint32_t)f->payload[3] << 24);
                 t.subseconds = hil_get_u16(&f->payload[4]);
                 handlers.on_time(t);
+            }
+            break;
+
+        case HIL_CANBUS_RX:
+        {
+            unsigned next = (canbus_tail + 1) % CANBUS_QUEUE;
+            if (f->len > 8)
+            {
+                break;
+            }
+            if (next == canbus_head)
+            {
+                stats.canbus_overflows++;
+                break;
+            }
+            canbus_queue[canbus_tail].id  = (uint16_t)(f->addr & 0x7FFu);
+            canbus_queue[canbus_tail].dlc = (uint8_t)f->len;
+            memset(canbus_queue[canbus_tail].data, 0, 8);
+            memcpy(canbus_queue[canbus_tail].data, f->payload, f->len);
+            canbus_tail = next;
+            break;
+        }
+
+        case HIL_CANBUS_STATUS:
+            canbus_announced = 1;
+            break;
+
+        case HIL_HEARTBEAT:
+            if (f->seq == hb_seq && hb_sent_us != 0)
+            {
+                uint32_t us = (uint32_t)(fs_hal_time_us() - hb_sent_us);
+                echo_count++;
+                echo_total_us += us;
+                echo_max_us = us > echo_max_us ? us : echo_max_us;
+                hb_sent_us  = 0;
             }
             break;
 
@@ -362,7 +446,8 @@ static int transact(uint8_t req_type, uint8_t bus, uint32_t addr, const uint8_t 
     rc = send_frame(req_type, bus, pending.seq, addr, txn_payload, tx_len + 2);
     if (rc == FS_UMB_OK)
     {
-        deadline = fs_hal_time_us() + (uint64_t)timeout_ms * 1000u;
+        uint64_t start = fs_hal_time_us();
+        deadline       = start + (uint64_t)timeout_ms * 1000u;
         while (!pending.done && fs_hal_time_us() < deadline)
         {
             fs_umb_poll();
@@ -378,7 +463,11 @@ static int transact(uint8_t req_type, uint8_t bus, uint32_t addr, const uint8_t 
         }
         else
         {
-            rc = pending.status;
+            uint32_t us = (uint32_t)(fs_hal_time_us() - start);
+            txn_count++;
+            txn_total_us += us;
+            txn_max_us = us > txn_max_us ? us : txn_max_us;
+            rc         = pending.status;
             if (rc != HIL_STATUS_OK)
             {
                 stats.bus_errors++;
@@ -387,6 +476,16 @@ static int transact(uint8_t req_type, uint8_t bus, uint32_t addr, const uint8_t 
     }
     pending.active = 0;
     return rc;
+}
+
+void fs_umb_take_txn_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us)
+{
+    *count       = txn_count;
+    *mean_us     = txn_count ? (uint32_t)(txn_total_us / txn_count) : 0;
+    *max_us      = txn_max_us;
+    txn_count    = 0;
+    txn_total_us = 0;
+    txn_max_us   = 0;
 }
 
 int fs_umb_i2c(uint8_t bus, uint8_t addr, const uint8_t *tx, size_t tx_len, uint8_t *rx, size_t rx_len,
@@ -493,7 +592,19 @@ int fs_umb_trq(uint8_t torquer, int16_t duty)
 
 int fs_umb_heartbeat(void)
 {
-    return send_frame(HIL_HEARTBEAT, 0, next_seq++, 0, NULL, 0);
+    hb_seq     = next_seq++;
+    hb_sent_us = fs_hal_time_us();
+    return send_frame(HIL_HEARTBEAT, 0, hb_seq, 0, NULL, 0);
+}
+
+void fs_umb_take_echo_timing(uint32_t *count, uint32_t *mean_us, uint32_t *max_us)
+{
+    *count        = echo_count;
+    *mean_us      = echo_count ? (uint32_t)(echo_total_us / echo_count) : 0;
+    *max_us       = echo_max_us;
+    echo_count    = 0;
+    echo_total_us = 0;
+    echo_max_us   = 0;
 }
 
 int fs_umb_send_tm(const uint8_t *pkt, size_t len)
@@ -508,7 +619,7 @@ int fs_umb_send_rf(const uint8_t *frame, size_t len)
 
 void fs_umb_log(const char *fmt, ...)
 {
-    char    text[128];
+    char    text[256];
     va_list ap;
     int     n;
 

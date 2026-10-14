@@ -55,13 +55,15 @@ static void set_torquers(const float m[3])
 /* Body torque from the wheels: each wheel is driven with the opposite torque */
 static void set_wheels(const float body_torque[3])
 {
-    int i;
+    double torque[DEV_NUM_RW];
+    int    i;
 
     for (i = 0; i < DEV_NUM_RW; i++)
     {
         obc.adcs.rw_torque[i] = -body_torque[i];
-        dev_rw_set_torque((uint8_t)i, obc.adcs.rw_torque[i]);
+        torque[i]             = obc.adcs.rw_torque[i];
     }
+    dev_rw_set_torque_all(torque);
 }
 
 static void stop_actuators(void)
@@ -160,7 +162,7 @@ void obc_adcs_step(void)
 {
     uint64_t now = fs_hal_time_us();
 
-    obc_sensors_acquire_adcs();
+    /* The sensors were read 50 ms earlier by the adcs_sense task (obc_main.c) */
     obc.adcs.sun_valid =
         (uint8_t)(sensors_ok(OBC_VALID_CSS) && adcs_sun_from_css(obc.css.illum, ADCS_CSS_MIN, obc.adcs.sun));
     /* Reported in every mode: knowing where the Sun is doesn't depend on which control law runs */

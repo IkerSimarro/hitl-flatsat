@@ -10,7 +10,7 @@ In the order the scenario reaches the modes they matter in:
                                                                             the wheel on its own; recovery
 Runs in the SIL environment from NOS3's 2.8 deg/s deployment tip-off (about 8 minutes):
 
-    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+    sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
                 python3 tests/system/test_failures.py'
 """
 import mmap

@@ -11,16 +11,28 @@
 #   tests/run_all.sh all        every stage except the blocked one (TC-15: tests/run_all.sh reference)
 #                               and the hardware ones (a Pico on USB: tests/run_all.sh hil)
 #   tests/run_all.sh unit sil   only the stages whose name contains one of the words
+#   tests/run_all.sh --pico ... the same, with the OBC on the Raspberry Pi Pico 2 (hardware in the loop): the
+#                               firmware is built and flashed first and the Pico stays attached to WSL; each
+#                               stage restarts it (sil/start_obc.sh) and the bridge carries the CAN nodes' bus
+#                               to it. sil:devices, which tests the Linux build's drivers, is skipped;
+#                               hil:pico-bench runs too
 #
 ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
 cd "$ROOT" || exit 1
 IMAGE=ivvitc/nos3-64:20260619
 LOG=$ROOT/tests/logs/run-$(date +%Y%m%d-%H%M%S)
 mkdir -p "$LOG"
+CONFIG=sil
+if [ "${1:-}" = "--pico" ]; then
+    shift
+    CONFIG=hil-pico
+    export SIL_UMB_DEV=/dev/ttyACM0 SIL_UMB_CAN=vcan0
+fi
+export SUT_CONFIG=$CONFIG
 # The software under test, recorded before any stage runs (for the test report)
 export SUT_COMMIT=$(git rev-parse --short HEAD) SUT_NOS3_COMMIT=$(git -C nos3 rev-parse --short HEAD)
 export SUT_DIRTY=$(git status --porcelain --untracked-files=no | head -c1)
-NODES='sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&'
+NODES='sil/start_nodes.sh && sil/start_obc.sh &&'
 
 # A procedure step run as a command (the unit stages): prints its PASS/FAIL line, remembers a failure
 step()
@@ -48,22 +60,39 @@ STAGES=(
     "sil:reference    D=\$SIL_LOG_DIR; SIL_INIT_RATES='2 -3 4' SIL_LOG_DIR=\$D/flatsat sil/sil.sh '$NODES python3 tests/system/test_reference_adcs.py --fsw flatsat'; SIL_INIT_RATES='2 -3 4' SIL_NO_BRIDGE=1 SIL_DOCKER_ARGS='--sysctl fs.mqueue.msg_max=10000 --ulimit rtprio=99 --cap-add=sys_nice' SIL_LOG_DIR=\$D/cfs sil/sil.sh 'python3 tests/system/test_reference_adcs.py --fsw cfs'; python3 tests/system/test_reference_adcs.py --compare \$D"
     "sil:orbit        sil/sil.sh '$NODES python3 tests/system/test_orbit.py'"
     "e2e:cosmos       tests/cosmos/test_cosmos_e2e.sh"
-    "hil:pico-bench   tools/pico/build.sh > /dev/null && tools/pico/flash.sh && SIL_UMB_DEV=/dev/ttyACM0 tools/pico/attach.sh -- sil/sil.sh 'python3 tests/system/test_pico_bench.py'"
+    "hil:pico-bench   tools/pico/build.sh > /dev/null && tools/pico/flash.sh && SIL_UMB_DEV=/dev/ttyACM0 SIL_UMB_CAN= tools/pico/attach.sh -- sil/sil.sh 'python3 tests/system/test_pico_bench.py'"
 )
 
 LONG="sil:orbit"         # only with "all" or by name (about 100 minutes)
 BLOCKED="sil:reference"  # only by name: its test case is blocked (TC-15, NCR-015)
-HARDWARE="hil:pico-bench" # only by name: needs a Pico on USB (tests/run_all.sh hil)
+HARDWARE="hil:pico-bench" # needs a Pico on USB: with --pico, or by name (tests/run_all.sh hil)
+SIL_ONLY="sil:devices"    # tests the Linux build's drivers: not with --pico
 
 selected()
 {
-    [ $# -le 1 ] && [[ " $LONG $BLOCKED $HARDWARE " != *" $1 "* ]] && return 0
-    [ "${2:-}" = all ] && [[ " $BLOCKED $HARDWARE " != *" $1 "* ]] && return 0
-    [ $# -le 1 ] && return 1
-    local w
-    for w in "${@:2}"; do [[ $1 == *$w* ]] && return 0; done
+    local name=$1 hw=$HARDWARE w
+    shift
+    if [ $CONFIG = hil-pico ]; then
+        [[ " $SIL_ONLY " == *" $name "* ]] && return 1
+        hw=""
+    fi
+    [ $# -eq 0 ] && [[ " $LONG $BLOCKED $hw " != *" $name "* ]] && return 0
+    [ "${1:-}" = all ] && [[ " $BLOCKED $hw " != *" $name "* ]] && return 0
+    [ $# -eq 0 ] && return 1
+    for w in "$@"; do [[ $name == *$w* ]] && return 0; done
     return 1
 }
+
+if [ $CONFIG = hil-pico ]; then
+    # The firmware under test, on the Pico, kept attached to WSL across the restarts every stage begins with
+    echo "==== Pico: build and flash"
+    { tools/pico/build.sh && tools/pico/flash.sh; } > "$LOG/pico-flash.log" 2>&1 ||
+        { echo "Pico build or flash failed: see $LOG/pico-flash.log"; exit 1; }
+    tools/pico/attach.sh --keep &
+    KEEPER=$!
+    export PICO_KEEPER=1
+    trap 'kill $KEEPER 2> /dev/null' EXIT
+fi
 
 declare -a NAMES RESULTS TIMES
 for s in "${STAGES[@]}"; do
@@ -98,7 +127,7 @@ j = rest.index("--"); results, times = rest[:j], rest[j + 1:]
 summary = {
     "started": os.path.basename(log)[4:], "finished": datetime.datetime.now().isoformat(timespec="seconds"),
     "host": f"{platform.node()} ({platform.system()} {platform.release()}, {os.cpu_count()} CPUs)",
-    "commit": os.environ["SUT_COMMIT"], "dirty": bool(os.environ["SUT_DIRTY"]), "nos3_commit": os.environ["SUT_NOS3_COMMIT"],
+    "config": os.environ["SUT_CONFIG"], "commit": os.environ["SUT_COMMIT"], "dirty": bool(os.environ["SUT_DIRTY"]), "nos3_commit": os.environ["SUT_NOS3_COMMIT"],
     "stages": [{"name": n, "result": r, "seconds": int(t), "log": n.replace(":", "-") + ".log"}
                for n, r, t in zip(names, results, times)],
 }

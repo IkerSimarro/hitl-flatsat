@@ -40,17 +40,31 @@ static int request(uint8_t wheel, const char *req, char *reply)
     return DEV_OK;
 }
 
-int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms)
+/* The three wheels at once (each on its own UART): one round trip instead of three (the 5 Hz ADCS budget) */
+static void request_all(const char *const req[DEV_NUM_RW], char reply[DEV_NUM_RW][RW_REPLY_MAX], int rc[DEV_NUM_RW])
+{
+    uint8_t  bus[DEV_NUM_RW];
+    uint8_t *rx[DEV_NUM_RW];
+    unsigned w;
+
+    for (w = 0; w < DEV_NUM_RW; w++)
+    {
+        bus[w] = (uint8_t)(DEV_RW_UART_BASE + w);
+        rx[w]  = (uint8_t *)reply[w];
+    }
+    dev_uart_request_all(DEV_NUM_RW, bus, req, rx, RW_REPLY_MAX - 1, RW_TIMEOUT_MS, RW_QUIET_MS, rc);
+    for (w = 0; w < DEV_NUM_RW; w++)
+    {
+        reply[w][rc[w] >= 0 ? rc[w] : 0] = '\0';
+        rc[w]                            = rc[w] >= 0 ? DEV_OK : rc[w];
+    }
+}
+
+static int parse_momentum(const char *reply, double *momentum_nms)
 {
     static const char prefix[] = "CURRENT_MOMENTUM=";
-    char              reply[RW_REPLY_MAX];
     char             *end;
-    int               rc = request(wheel, "CURRENT_MOMENTUM", reply);
 
-    if (rc != DEV_OK)
-    {
-        return rc;
-    }
     if (strncmp(reply, prefix, sizeof(prefix) - 1) != 0)
     {
         return DEV_ERR_FORMAT;
@@ -59,12 +73,34 @@ int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms)
     return end == reply + sizeof(prefix) - 1 ? DEV_ERR_FORMAT : DEV_OK;
 }
 
-int dev_rw_set_torque(uint8_t wheel, double torque_nm)
+int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms)
 {
-    char req[32];
     char reply[RW_REPLY_MAX];
-    int  rc;
+    int  rc = request(wheel, "CURRENT_MOMENTUM", reply);
 
+    return rc != DEV_OK ? rc : parse_momentum(reply, momentum_nms);
+}
+
+int dev_rw_get_momentum_all(double momentum_nms[DEV_NUM_RW])
+{
+    static const char *const req[DEV_NUM_RW] = {"CURRENT_MOMENTUM", "CURRENT_MOMENTUM", "CURRENT_MOMENTUM"};
+    char                     reply[DEV_NUM_RW][RW_REPLY_MAX];
+    int                      rc[DEV_NUM_RW];
+    int                      result = DEV_OK;
+    unsigned                 w;
+
+    request_all(req, reply, rc);
+    for (w = 0; w < DEV_NUM_RW; w++)
+    {
+        int r = rc[w] != DEV_OK ? rc[w] : parse_momentum(reply[w], &momentum_nms[w]);
+        result = result == DEV_OK ? r : result;
+    }
+    return result;
+}
+
+/* The request for a torque, or DEV_ERR_ARG if it is out of range */
+static int torque_request(double torque_nm, char req[32])
+{
     if (!(torque_nm >= -DEV_RW_MAX_TORQUE && torque_nm <= DEV_RW_MAX_TORQUE)) /* also rejects NaN */
     {
         return DEV_ERR_ARG;
@@ -73,11 +109,49 @@ int dev_rw_set_torque(uint8_t wheel, double torque_nm)
     {
         torque_nm = 0.0;
     }
-    snprintf(req, sizeof(req), "SET_TORQUE=%.6e", torque_nm);
-    rc = request(wheel, req, reply);
+    snprintf(req, 32, "SET_TORQUE=%.6e", torque_nm);
+    return DEV_OK;
+}
+
+int dev_rw_set_torque(uint8_t wheel, double torque_nm)
+{
+    char req[32];
+    char reply[RW_REPLY_MAX];
+    int  rc = torque_request(torque_nm, req);
+
+    if (rc == DEV_OK)
+    {
+        rc = request(wheel, req, reply);
+    }
     if (rc != DEV_OK)
     {
         return rc;
     }
     return strncmp(reply, "SET_TORQUE=", 11) == 0 ? DEV_OK : DEV_ERR_FORMAT;
+}
+
+int dev_rw_set_torque_all(const double torque_nm[DEV_NUM_RW])
+{
+    char        req[DEV_NUM_RW][32];
+    const char *reqs[DEV_NUM_RW];
+    char        reply[DEV_NUM_RW][RW_REPLY_MAX];
+    int         rc[DEV_NUM_RW];
+    int         result = DEV_OK;
+    unsigned    w;
+
+    for (w = 0; w < DEV_NUM_RW; w++)
+    {
+        if (torque_request(torque_nm[w], req[w]) != DEV_OK)
+        {
+            return DEV_ERR_ARG; /* none is sent: the wheels are commanded together or not at all */
+        }
+        reqs[w] = req[w];
+    }
+    request_all(reqs, reply, rc);
+    for (w = 0; w < DEV_NUM_RW; w++)
+    {
+        int r = rc[w] != DEV_OK ? rc[w] : (strncmp(reply[w], "SET_TORQUE=", 11) == 0 ? DEV_OK : DEV_ERR_FORMAT);
+        result = result == DEV_OK ? r : result;
+    }
+    return result;
 }

@@ -24,6 +24,15 @@ int dev_map_umb(int rc);
 int dev_uart_request(uint8_t bus, const uint8_t *req, size_t req_len, uint8_t *reply, size_t reply_max,
                      size_t expected, uint32_t first_byte_timeout_ms, uint32_t quiet_ms);
 
+/*
+** Several request/reply exchanges at once, each on its own UART: every request is written, then the replies
+** are collected together, so n exchanges cost about one round trip. A reply ends when its line goes quiet.
+** rc[i] is the reply's length or a DEV_ERR_ code.
+*/
+#define DEV_UART_MAX_PARALLEL 4
+void dev_uart_request_all(unsigned n, const uint8_t bus[], const char *const req[], uint8_t *const reply[],
+                          size_t reply_max, uint32_t first_byte_timeout_ms, uint32_t quiet_ms, int rc[]);
+
 /* Big-endian readers */
 static inline uint16_t dev_be16(const uint8_t *p)
 {

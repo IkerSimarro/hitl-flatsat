@@ -29,7 +29,7 @@ docker run -d --rm --name "$COSMOS_NAME" --network "$NET" --network-alias flatsa
 
 # SIL environment with the OBC and the CAN nodes, reachable as nos-fsw
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_DETACH=1 "$ROOT/sil/sil.sh" \
-    'sil/start_nodes.sh && { firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 & sleep 600; }' \
+    'sil/start_nodes.sh && sil/start_obc.sh && sleep 600' \
     > /dev/null
 
 echo "[e2e] waiting for the simulation..."

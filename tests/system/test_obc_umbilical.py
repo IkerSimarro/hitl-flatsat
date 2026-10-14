@@ -3,7 +3,7 @@
 
 Acts as COSMOS would: receives the bridge's telemetry on UDP 9011 and sends commands to UDP 9010.
 
-    sil/sil.sh 'sil/start_nodes.sh && (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) &&
+    sil/sil.sh 'sil/start_nodes.sh && sil/start_obc.sh &&
                 python3 tests/system/test_obc_umbilical.py'
 """
 import pathlib

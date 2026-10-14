@@ -53,14 +53,20 @@ static void queue_frame(const hil_frame_t *f)
     }
 }
 
-void fake_bridge_inject(uint8_t type, uint8_t bus, const uint8_t *payload, size_t len)
+void fake_bridge_inject_addr(uint8_t type, uint8_t bus, uint32_t addr, const uint8_t *payload, size_t len)
 {
     memset(&reply, 0, sizeof(reply));
     reply.type = type;
     reply.bus  = bus;
+    reply.addr = addr;
     reply.len  = (uint16_t)len;
     memcpy(reply.payload, payload, len);
     queue_frame(&reply);
+}
+
+void fake_bridge_inject(uint8_t type, uint8_t bus, const uint8_t *payload, size_t len)
+{
+    fake_bridge_inject_addr(type, bus, 0, payload, len);
 }
 
 static void bridge_handle(const hil_frame_t *f)

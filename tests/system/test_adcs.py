@@ -6,7 +6,7 @@ From a tumbling start the OBC must detumble on its own (B-dot, magnetorquers), h
 on trust: rates and pointing are checked against 42's truth stream. Runs in the SIL environment (8-10 min):
 
     SIL_INIT_RATES="2 -3 4" sil/sil.sh 'sil/start_nodes.sh &&
-        (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_adcs.py'
+        sil/start_obc.sh && python3 tests/system/test_adcs.py'
 """
 import csv
 import datetime

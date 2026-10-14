@@ -48,7 +48,8 @@ typedef struct
     uint8_t  data[8];
 } fs_can_frame_t;
 
-/* 1 if this node has a working CAN controller, 0 if none is fitted (a bench set-up without the bus) */
+/* 1 if this node is on a CAN bus, 0 if none is fitted (a bench set-up). It can become 1 after start-up: a
+** Pico without its CAN board gets the bus over the umbilical once the bridge announces it. */
 int fs_hal_can_present(void);
 int fs_hal_can_send(const fs_can_frame_t *frame);
 /* Returns 1 and fills frame if one was waiting, 0 if none, < 0 on error */

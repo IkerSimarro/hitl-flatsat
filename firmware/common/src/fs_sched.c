@@ -45,6 +45,13 @@ static void account_load(uint64_t now)
     }
 }
 
+static fs_task_fn boundary;
+
+void fs_sched_set_boundary(fs_task_fn fn)
+{
+    boundary = fn;
+}
+
 uint32_t fs_sched_run(void)
 {
     uint64_t now = fs_hal_time_us();
@@ -62,6 +69,12 @@ uint32_t fs_sched_run(void)
             continue;
         }
 
+        if (boundary != NULL)
+        {
+            start = fs_hal_time_us();
+            boundary();
+            window_busy_us += fs_hal_time_us() - start;
+        }
         start = fs_hal_time_us();
         t->fn();
         now = fs_hal_time_us();

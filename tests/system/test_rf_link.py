@@ -6,7 +6,7 @@ COSMOS would get over the radio (FLATSAT_RF, UDP 9031) and the OBC's own view ov
 Runs in the SIL environment with the ground station out of contact at start (about 4 minutes):
 
     SIL_GS_ARGS="--mode never --seed 1" sil/sil.sh 'sil/start_nodes.sh &&
-        (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_rf_link.py'
+        sil/start_obc.sh && python3 tests/system/test_rf_link.py'
 """
 import pathlib
 import select

@@ -26,6 +26,7 @@ extern unsigned fake_frames_from_fw;
 
 /* Queue an unsolicited frame from the bridge to the firmware */
 void fake_bridge_inject(uint8_t type, uint8_t bus, const uint8_t *payload, size_t len);
+void fake_bridge_inject_addr(uint8_t type, uint8_t bus, uint32_t addr, const uint8_t *payload, size_t len);
 
 /* Fake CAN bus: frames the firmware sends are recorded; frames injected here are what it receives */
 #include "fs_hal.h"

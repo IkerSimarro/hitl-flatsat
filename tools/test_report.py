@@ -200,6 +200,13 @@ def summary_of(run):
     return json.loads((run / "summary.json").read_text()) if (run / "summary.json").exists() else {}
 
 
+CONFIGS = {
+    "sil": "Software-in-the-loop: the OBC and the CAN nodes as Linux processes",
+    "hil-pico": "Hardware-in-the-loop: the OBC on a Raspberry Pi Pico 2 (umbilical on USB); the CAN nodes as Linux "
+                "processes, their bus carried over the umbilical",
+}
+
+
 def software(sm):
     return (f"hitl-flatsat `{sm.get('commit', '?')}`{' (with local changes)' if sm.get('dirty') else ''}, "
             f"NOS3 fork `{sm.get('nos3_commit', '?')}`")
@@ -235,7 +242,8 @@ def report(runs, out):
         sm = summary_of(r)
         stages = ", ".join(f"`{st['name']}`" for st in sm.get("stages", []))
         o.append(f"| Later run | `{r.name}` (finished {sm.get('finished', '?')}): {stages}, on {software(sm)} |")
-    o += [f"| Environment | Software-in-the-loop on {summary.get('host', '?')}; NOS3 image `ivvitc/nos3-64:20260619`, "
+    o += [f"| Configuration | {CONFIGS.get(summary.get('config', 'sil'), summary.get('config'))} |",
+          f"| Environment | {summary.get('host', '?')}; NOS3 image `ivvitc/nos3-64:20260619`, "
          f"COSMOS 4.5.0 |",
          f"| Plan and procedures | [TEST_PLAN.md]({doc('docs/test/TEST_PLAN.md')}), "
          f"[TEST_PROCEDURES.md]({doc('docs/test/TEST_PROCEDURES.md')}) |",

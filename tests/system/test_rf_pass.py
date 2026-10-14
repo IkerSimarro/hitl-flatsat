@@ -7,7 +7,7 @@ store-and-forward across AOS, the link getting stronger towards culmination and 
 pass (elevation, range, RSSI, SNR, what arrived) in rf_pass.csv in the log directory. About 12 minutes:
 
     SIL_GS_ARGS="--lat 37.9402 --lon -75.4664 --alt 10 --seed 1" sil/sil.sh 'sil/start_nodes.sh &&
-        (firmware/build/obc --umb-pty $SIL_UMB_PTY > $SIL_LOG_DIR/obc.log 2>&1 &) && python3 tests/system/test_rf_pass.py'
+        sil/start_obc.sh && python3 tests/system/test_rf_pass.py'
 """
 import csv
 import os

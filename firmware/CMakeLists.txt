@@ -124,8 +124,10 @@ if(FLATSAT_PLATFORM STREQUAL "pico")
     set_source_files_properties(hal/pico/fs_hal_pico.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
     target_include_directories(obc PRIVATE obc)
     target_link_libraries(obc obc_devices adcs_law fs_common pico_stdlib hardware_watchdog hardware_uart)
-    # The name the PC shows for the USB device
-    target_compile_definitions(obc PRIVATE "USBD_PRODUCT=\"FlatSat OBC\"" "USBD_MANUFACTURER=\"HITL FlatSat\"")
+    # The name the PC shows for the USB device. USB buffers of 4 KB instead of the SDK's 64 bytes: with 64, every
+    # telemetry packet waited for the host to collect it 64 bytes at a time, blocking the OBC (NCR-018)
+    target_compile_definitions(obc PRIVATE "USBD_PRODUCT=\"FlatSat OBC\"" "USBD_MANUFACTURER=\"HITL FlatSat\""
+        CFG_TUD_CDC_TX_BUFSIZE=4096 CFG_TUD_CDC_RX_BUFSIZE=4096)
     # The C library's printf: the SDK's formats -0.0 and the smallest doubles as "nane-308" (NCR-017)
     pico_set_printf_implementation(obc compiler)
     pico_enable_stdio_usb(obc 1)

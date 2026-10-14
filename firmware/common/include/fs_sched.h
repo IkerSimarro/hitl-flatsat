@@ -38,6 +38,10 @@ void fs_sched_init(fs_task_t *tasks, unsigned count);
 /* Runs every task that is due; returns microseconds until the next task is due */
 uint32_t fs_sched_run(void);
 
+/* Work run at every task boundary, before each task: what must not interrupt a task but shouldn't wait for a
+** slot of its own either (the OBC's commands). Its time counts as busy, not against any task. */
+void fs_sched_set_boundary(fs_task_fn fn);
+
 /* Busy time as a percentage of the last completed 1 s window */
 uint8_t fs_sched_cpu_load(void);
 

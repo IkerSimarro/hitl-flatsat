@@ -12,6 +12,7 @@
 #   SIL_LOG_DIR   where component logs go (default: a new temporary directory)
 #   SIL_NO_BRIDGE set to 1 to skip the bridge
 #   SIL_UMB_DEV   a real OBC's serial device (the Pico's USB port): the bridge opens it instead of the pty
+#   SIL_UMB_CAN   the CAN interface the bridge carries to that OBC over the umbilical (e.g. vcan0)
 #   SIL_GRAPHICS  set to 1 to open 42's 3D view (needs DISPLAY and the X11 socket)
 #   SIL_GROUND_HOST  if set, umbilical telemetry and 42 truth go to this host (the ground segment)
 #                    instead of staying inside the container
@@ -148,6 +149,7 @@ if [ "${SIL_NO_BRIDGE:-0}" != "1" ]; then
     # The bridge attaches once the umbilical exists: the OBC process creates its pty; a real OBC's serial
     # device is already there
     UMB=${SIL_UMB_DEV:-$SIL_UMB_PTY}
+    [ -n "${SIL_UMB_CAN:-}" ] && BRIDGE_ARGS="$BRIDGE_ARGS --flatsat-can $SIL_UMB_CAN"
     (while [ ! -e "$UMB" ]; do sleep 0.2; done
      exec "$SIM_BIN/nos3-hil-bridge" -d "$UMB" $BRIDGE_ARGS -v > "$SIL_LOG_DIR/bridge.log" 2>&1) &
 fi
