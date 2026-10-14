@@ -38,6 +38,12 @@ for _ in $(seq 120); do
     sleep 1
 done
 docker logs "$SIL_NAME" 2>&1 | grep -q "simulation running" || { echo "[e2e] simulation did not start"; exit 1; }
+# The OBC too: a Pico is restarted first, and a command sent before that would reach the old instance
+for _ in $(seq 90); do
+    docker logs "$SIL_NAME" 2>&1 | grep -q "\[obc\] ready" && break
+    sleep 1
+done
+docker logs "$SIL_NAME" 2>&1 | grep -q "\[obc\] ready" || { echo "[e2e] the OBC did not start"; exit 1; }
 
 docker exec -w "$COSMOS_DIR" "$COSMOS_NAME" ruby "$ROOT/tests/cosmos/test_cosmos_umbilical.rb"
 RC=$?

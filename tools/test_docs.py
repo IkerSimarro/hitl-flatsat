@@ -91,6 +91,8 @@ def gen_procedures(v):
               "", tc["objective"], "", f"- **Stage:** `{tc['stage']}`", f"- **Script:** `{tc['script']}`"]
         if tc.get("config"):
             o.append(f"- **Configuration:** {tc['config']}")
+        o.append("- **Runs in:** " + {("sil",): "SIL only", ("hil",): "HIL only (a Pico on USB)"}.get(
+            tuple(tc.get("levels", [])), "SIL and HIL (`tests/run_all.sh --pico`)"))
         o += ["", "| Step | Check | Pass criterion | Requirements |", "|---|---|---|---|"]
         for st in tc["steps"]:
             o.append(f"| {st['id']} | {st['title']} | {st['criterion']} | {', '.join(st['reqs'])} |")

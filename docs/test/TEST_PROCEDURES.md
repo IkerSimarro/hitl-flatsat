@@ -37,6 +37,7 @@ The interface code generated from the ICD is up to date, the Python codec and RF
 
 - **Stage:** `unit:icd, unit:cosmos-defs`
 - **Script:** `tools/icd_gen.py --check; tests/unit; tests/cosmos/check_defs.sh; tests/cosmos/check_screens.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -53,6 +54,7 @@ The flight libraries pass their unit tests on a fake HAL, and the wheel speed lo
 
 - **Stage:** `unit:firmware`
 - **Script:** `firmware/build/test_common, test_wheel_ctrl, test_adcs`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -68,6 +70,7 @@ The HIL bridge carries every frame type between a stand-in MCU and NOS3 (test en
 
 - **Stage:** `e2e:bridge`
 - **Script:** `nos3/components/hil_bridge/support/e2e_test.sh`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -88,7 +91,8 @@ Every OBC driver reads or commands its NOS3 device correctly, compared with 42's
 
 - **Stage:** `sil:devices`
 - **Script:** `firmware/build/test_devices`
-- **Configuration:** SIL with a 5.4 deg/s tumble
+- **Configuration:** SIL with a 5.4 deg/s tumble; SIL only (a Linux test program drives the drivers; on the Pico the OBC exercises them in every other test case)
+- **Runs in:** SIL only
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -115,6 +119,7 @@ The OBC validates commands, reports rejections, and produces its telemetry at th
 
 - **Stage:** `sil:umbilical`
 - **Script:** `tests/system/test_obc_umbilical.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -139,6 +144,7 @@ The OBC operates the ADCS and EPS nodes over CAN, including switch and reset fau
 
 - **Stage:** `sil:can-nodes`
 - **Script:** `tests/system/test_can_nodes.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -161,6 +167,7 @@ Isolated misses are tolerated, persistent ones declared and recovered, and one f
 
 - **Stage:** `sil:faults`
 - **Script:** `tests/system/test_fault_persistence.sh`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -179,6 +186,7 @@ From a tumble, the OBC detumbles, hands over to sun pointing and converges on it
 - **Stage:** `sil:adcs`
 - **Script:** `tests/system/test_adcs.py`
 - **Configuration:** SIL with a 5.4 deg/s tumble
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -200,6 +208,7 @@ Store and forward, telecommands over RF, frame checks, link loss and beacon cont
 - **Stage:** `sil:rf-link`
 - **Script:** `tests/system/test_rf_link.py`
 - **Configuration:** ground station out of contact at start (--mode never --seed 1)
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -222,6 +231,7 @@ A real pass from 42's orbit, against the ground station's own prediction.
 - **Stage:** `sil:rf-pass`
 - **Script:** `tests/system/test_rf_pass.py`
 - **Configuration:** ground station at Wallops (37.9402 N, 75.4664 W)
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -240,6 +250,7 @@ NOS3's COSMOS, headless, operates the FlatSat through both the umbilical and the
 
 - **Stage:** `e2e:cosmos`
 - **Script:** `tests/cosmos/test_cosmos_e2e.sh`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -264,6 +275,7 @@ Fault injection beyond the sensors - a failed wheel, a failed magnetometer durin
 - **Stage:** `sil:failures`
 - **Script:** `tests/system/test_failures.py`
 - **Configuration:** SIL in SUN_POINT and DETUMBLE
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -281,13 +293,14 @@ The EPS node's measurements against the plant's true values, and the physical wh
 
 - **Stage:** `sil:hardware-twin`
 - **Script:** `tests/system/test_hardware_twin.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
 | TC-13.1 | Rail measurement accuracy | within 2 mA and 10 mV of the true values over four load cases | SYS-05 |
 | TC-13.2 | Wheel steps | within 20 rpm of ±100, ±300 rpm in < 2 s; overshoot < 10 % | SYS-08 |
 | TC-13.3 | Mirroring in SUN_POINT | physical wheel at 1:10 of wheel 0 within 20 rpm | SYS-08 |
-| TC-13.4 | Loss of commands | motor drive removed within 1.5 s | SYS-08 |
+| TC-13.4 | Loss of commands | motor drive removed within 1.5 s of the OBC freezing (on the Pico: of the bridge freezing) | SYS-08 |
 
 ## TC-14
 
@@ -297,6 +310,7 @@ A full orbit (about 95 minutes) without intervention: attitude held in sunlight 
 
 - **Stage:** `sil:orbit`
 - **Script:** `tests/system/test_orbit.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -314,6 +328,7 @@ The same scenario flown by NOS3's own flight software (cFS with the generic ADCS
 
 - **Stage:** `sil:reference`
 - **Script:** `tests/system/test_reference_adcs.py`
+- **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
@@ -329,6 +344,7 @@ The flight software on its target hardware, against the same simulated spacecraf
 - **Stage:** `hil:pico-bench`
 - **Script:** `tests/system/test_pico_bench.py`
 - **Configuration:** The OBC firmware on a Raspberry Pi Pico 2, its umbilical on the Pico's USB port (attached to WSL with usbipd, SIL_UMB_DEV=/dev/ttyACM0); NOS3's deployment tip-off; no CAN boards fitted. The stage builds the firmware (tools/pico/build.sh), flashes it (tools/pico/flash.sh) and keeps the Pico attached across its restarts (tools/pico/attach.sh).
+- **Runs in:** HIL only (a Pico on USB)
 
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|

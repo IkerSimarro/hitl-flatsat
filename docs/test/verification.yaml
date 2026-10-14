@@ -95,7 +95,8 @@ requirements:
     methods: [A, T]
 
 # Test cases. stage: the tests/run_all.sh stage; script: what it runs; config: how the environment is set up;
-# status: planned or blocked (otherwise automated); informative: excluded from the requirement verdicts.
+# status: planned or blocked (otherwise automated); informative: excluded from the requirement verdicts;
+# levels: the configurations the test case applies to, sil and/or hil (default both).
 # Each step's ID is printed by the test as "PASS [TC-nn.m] ..." or "FAIL [TC-nn.m] ...".
 test_cases:
   - id: TC-01
@@ -141,7 +142,8 @@ test_cases:
   - id: TC-04
     title: Sensor and actuator drivers against 42 truth
     stage: sil:devices
-    config: SIL with a 5.4 deg/s tumble
+    levels: [sil]
+    config: SIL with a 5.4 deg/s tumble; SIL only (a Linux test program drives the drivers; on the Pico the OBC exercises them in every other test case)
     script: firmware/build/test_devices
     objective: Every OBC driver reads or commands its NOS3 device correctly, compared with 42's truth while the spacecraft tumbles.
     steps:
@@ -297,7 +299,7 @@ test_cases:
       - {id: TC-13.1, title: "Rail measurement accuracy", criterion: "within 2 mA and 10 mV of the true values over four load cases", reqs: [SYS-05]}
       - {id: TC-13.2, title: "Wheel steps", criterion: "within 20 rpm of ±100, ±300 rpm in < 2 s; overshoot < 10 %", reqs: [SYS-08]}
       - {id: TC-13.3, title: "Mirroring in SUN_POINT", criterion: "physical wheel at 1:10 of wheel 0 within 20 rpm", reqs: [SYS-08]}
-      - {id: TC-13.4, title: "Loss of commands", criterion: "motor drive removed within 1.5 s", reqs: [SYS-08]}
+      - {id: TC-13.4, title: "Loss of commands", criterion: "motor drive removed within 1.5 s of the OBC freezing (on the Pico: of the bridge freezing)", reqs: [SYS-08]}
 
   - id: TC-14
     title: One-orbit endurance
@@ -331,6 +333,7 @@ test_cases:
   - id: TC-16
     title: OBC on the Pico, alone on the bench (hardware in the loop)
     stage: hil:pico-bench
+    levels: [hil]
     script: tests/system/test_pico_bench.py
     config: >-
       The OBC firmware on a Raspberry Pi Pico 2, its umbilical on the Pico's USB port (attached to WSL with usbipd,

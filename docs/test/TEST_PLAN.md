@@ -24,7 +24,8 @@ The HIL bridge, the NOS3 simulators, 42, COSMOS and the plant model form the tes
 |---|---|---|---|
 | Unit | Flight libraries, control laws, ground code | Fake HAL; closed-loop plant and rigid-body models | Logic, protocol and algorithm correctness; control performance by analysis |
 | Software-in-the-loop (SIL) | The real flight software of all three nodes and the real ground station | Linux processes in Docker. NOS3 device simulators and 42 provide sensors and dynamics, virtual CAN (`vcan0`) the bus, a plant model the FlatSat's motor and battery, COSMOS the ground. | System behaviour against the requirements: the campaign this plan covers now |
-| Hardware-in-the-loop (HIL) | The same flight software on Raspberry Pi Pico 2 boards | Real CAN bus, reaction wheel, power board and LoRa radios; NOS3 and 42 still simulate the orbit and the spacecraft's sensors | Phase 7: the same test cases again on hardware, plus measurements that only hardware can give |
+| Hardware-in-the-loop, OBC on target (HIL-1) | The OBC firmware on a Raspberry Pi Pico 2; the ADCS and EPS nodes still as Linux processes | The SIL environment, with the OBC's umbilical on the Pico's USB port (usbipd under WSL). The bridge carries the CAN bus to the Pico over the umbilical (ICD 8.1 `CANBUS_*`) until its CAN board is fitted. | Phase 4: the same test cases with the flight computer on its target: its compiler, C library, USB link and timing (`tests/run_all.sh --pico`) |
+| Hardware-in-the-loop, FlatSat (HIL-2) | The same flight software on all the Pico 2 boards | Real CAN bus, reaction wheel, power board and LoRa radios; NOS3 and 42 still simulate the orbit and the spacecraft's sensors | Phase 7: the same test cases again on the FlatSat, plus measurements that only hardware can give |
 
 The flight software's source is identical at the SIL and HIL levels; the hardware abstraction layer changes, and so do the compiler and the C library. A SIL result therefore carries over to HIL only as far as those allow: a difference between them points at the hardware, its interfaces or the target's toolchain. The first HIL run showed why the last one matters: the Pico SDK's `printf` turned a negative zero into "nan" ([NCR-017](../ncr/NCR_LOG.md#ncr-017)).
 
@@ -42,6 +43,7 @@ The flight software's source is identical at the SIL and HIL levels; the hardwar
 | Simulator hangs | `SIGSTOP` / `SIGCONT` of the simulator process |
 | Motor power cut, node held in reset | EPS node load switches, commanded by the OBC |
 | Node crash | The node's process is killed and restarted |
+| OBC hang | `SIGSTOP` of the OBC process; on the Pico (HIL-1), of the bridge that carries its CAN traffic: the ADCS node sees the same thing, commands stopping |
 | CAN bus loss | The virtual CAN interface is taken down and brought back |
 | Low battery | NOS3 EPS simulator: `STATE_OF_CHARGE=` |
 | Corrupted or lost radio frames | Ground station: `GS_CORRUPT_NEXT`, `GS_SET_LOSS` |
@@ -51,9 +53,12 @@ The flight software's source is identical at the SIL and HIL levels; the hardwar
 **Repeatability.**
 - Random elements are seeded: the ground station's link loss uses `--seed`.
 - Initial conditions are explicit: `SIL_INIT_RATES`, the ground station position.
+- Every stage starts from a freshly booted OBC: a new Linux process, or, on the Pico, a commanded restart (`sil/start_obc.sh`).
 - Timing checks use simulation time where it matters. The simulation runs a few percent slower than the wall clock on the development laptop.
 
 **Evidence.** Each campaign run keeps the logs of every stage, the SIL logs of every process, and recorded time series (`adcs_timeseries.csv`, `rf_pass.csv`). It also keeps a `summary.json` with the software versions under test (git commits of both repositories).
+
+**Timing budget.** The OBC logs its own timing once a minute: each task's longest run, device round trips, the umbilical's echo time and how long commands wait. The test report summarises it per configuration; the SIL and HIL-1 figures together show what the target and its link cost ([NCR-018](../ncr/NCR_LOG.md#ncr-018)).
 
 ## 4. Pass and fail criteria
 
@@ -92,8 +97,8 @@ A fix is closed only after the test that found it, and the regression campaign, 
 | When | Campaign |
 |---|---|
 | October 2026 (Phase 3) | SIL campaign: all test cases, test report, traceability |
-| October 2026 (Phase 4) | The first Pico 2 runs the OBC firmware against NOS3: the first HIL run |
-| After the hardware build (Phase 7) | HIL campaign: the same test cases on the FlatSat, plus hardware measurements (wheel tracking, real power per mode, RF loss across passes, umbilical latency); SIL and HIL results compared |
+| October 2026 (Phase 4) | HIL-1: the OBC on a Pico 2, every test case that applies (all but TC-04, which tests the Linux build's drivers); SIL and HIL-1 compared step by step, with the OBC's timing budget |
+| After the hardware build (Phase 7) | HIL-2: the same test cases on the FlatSat, plus hardware measurements (wheel tracking, real power per mode, RF loss across passes, umbilical latency); SIL and HIL results compared |
 
 ## 8. Limitations of the SIL environment
 

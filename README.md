@@ -79,7 +79,8 @@ The OBC firmware also runs on a Pico 2, with its umbilical on the Pico's USB por
 tools/pico/build.sh         # firmware/build-pico/obc.uf2 (Pico SDK 2.3.1, in Docker)
 tools/pico/flash.sh         # restarts the Pico in its bootloader, copies the firmware, attaches it to WSL
 sil/launch.sh --pico        # as above, with the Pico as the flight computer (no CAN nodes yet)
-tests/run_all.sh hil        # test case TC-16 on the Pico
+tests/run_all.sh --pico     # the whole test campaign with the OBC on the Pico (about 35 minutes)
+tests/run_all.sh hil        # test case TC-16 on the Pico: the bench set-up, without the CAN bus
 ```
 
 The first time:
@@ -87,7 +88,7 @@ The first time:
 2. In PowerShell as administrator, install usbipd-win and share the FlatSat firmware's USB ID:
    `winget install --exact dorssel.usbipd-win`, then `usbipd bind --hardware-id 2e8a:0009`.
 
-The on-board LED blinks twice a second while the flight software runs.
+The on-board LED blinks twice a second while the flight software runs. In the campaign the CAN nodes still run on the PC; the bridge carries their bus to the Pico over its USB link until the CAN boards are fitted.
 
 See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.md) for the bridge protocol and the end-to-end test.
 

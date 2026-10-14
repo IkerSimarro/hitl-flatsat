@@ -21,6 +21,8 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-015](#ncr-015) | 2026-10-06 | NOS3's reference ADCS drives the wheels beyond their limit in the SIL environment | Minor | Open |
 | [NCR-016](#ncr-016) | 2026-10-06 | Two test scripts report failures the flight software didn't cause | Minor | Closed |
 | [NCR-017](#ncr-017) | 2026-10-14 | On the Pico, a zero wheel torque is sent as "nan" and destroys the simulation | Critical | Closed |
+| [NCR-018](#ncr-018) | 2026-10-14 | On the Pico, commands wait up to 200 ms: the OBC blocks on its own input and output | Major | Closed |
+| [NCR-019](#ncr-019) | 2026-10-14 | The COSMOS test commands the Pico before its restart | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -476,3 +478,64 @@ The wheel simulators' logs show the ADCS commanding wheel torques of up to ±16.
 
 **Lesson.** The same source on a new target is a new configuration: the C library differs as well as the processor. Hardware-in-the-loop found in its first minute what 104 SIL steps couldn't, because the SIL never ran the target's library. The SDK issue is worth reporting upstream (raspberrypi/pico-sdk, `pico_printf` `_etoa`).
 
+---
+
+## NCR-018
+
+**On the Pico, commands wait up to 200 ms: the OBC blocks on its own input and output**
+
+| | |
+|---|---|
+| Found by | TC-05.9 in the first campaign with the OBC on the Pico (`tests/run_all.sh --pico`): 20 pings, round trip median 154 ms, longest 180 ms |
+| Item | OBC scheduling (`firmware/obc/obc_main.c`), device I/O (`obc/devices`), Pico HAL and build (`hal/pico`, `CMakeLists.txt`) |
+| Severity | Major: SYS-06 requires a command round trip below 100 ms |
+| Status | Closed |
+
+**Observation.** On the PC the same check gave a median of 13 ms and a longest of 50 ms. On the Pico the median was 154 ms, and 75–97 ms after the first two corrections below.
+
+**Investigation.** Nothing reported the OBC's timing, so the OBC now logs a timing budget once a minute: each task's longest run and overruns, the device round trips, the umbilical's own round trip (heartbeat echo) and how long commands wait in the queue. The measurements, in normal operation (detumble and sun pointing) over two minutes:
+
+| | PC, before | Pico, before | PC, after | Pico, after |
+|---|---|---|---|---|
+| ADCS task (5 Hz), longest run | 141–298 ms | 160–227 ms | 80–104 ms (read half) | 164–196 ms (read half) |
+| Command task overruns per minute | 100 | 136–253 | – (no task) | – (no task) |
+| Bus transaction round trip, mean | 3.9 ms | 6.7–8.1 ms | 3.9 ms | 5.3 ms |
+| Umbilical echo, mean (longest) | – | 44 ms (205 ms) | – | 2.4 ms (14 ms) |
+| Command queue wait, mean (longest) | – | 35 ms (94 ms) | 4.3 ms (38 ms) | 8.9 ms (59 ms) |
+| Ping round trip, median (longest) | 12.8 ms (50 ms) | 82 ms (215 ms) | 2.2 ms (39 ms) | 4.1 ms (61 ms) |
+
+Three causes, in order of size on the Pico:
+1. **The Pico's main loop itself was blocked.** The umbilical echo, which involves no device, took 44 ms on average against 7–8 ms for a whole device transaction. The SDK's USB serial buffers are 64 bytes at full speed, so every telemetry packet longer than 64 bytes waited for the host to collect it 64 bytes at a time, and each collection goes through USB/IP. The debug log was also written to UART0 synchronously at 115 200 baud, about 17 ms per line.
+2. **Commands waited for a slot behind blocking tasks.** The scheduler is cooperative: a task that waits for a device reply holds every other task. Commands ran in their own 50 ms task, so a command waited for its slot and then for whatever was running. The 5 Hz ADCS task waited for six wheel exchanges in a row (three momentum reads, three torques, each about 12 ms including the 5 ms that ends a reply), and on the PC as well it sometimes took longer than its 200 ms period.
+3. **USB/IP adds about 2–4 ms per round trip** (bus transaction mean 3.9 ms on the PC, 5.3 ms on the Pico after the fixes). It is part of the HIL environment under WSL, not of the flight software.
+
+**Correction.**
+- The Pico's USB serial buffers are 4 KB each way (`CFG_TUD_CDC_TX_BUFSIZE`, `CFG_TUD_CDC_RX_BUFSIZE`), and the UART log goes through a buffer drained without ever waiting.
+- Commands run at every task boundary and whenever the main loop is idle (`fs_sched_set_boundary`), never in the middle of a task, so a mode change still can't land halfway through a control step.
+- The three wheels, each on its own UART, are read and commanded together (`dev_uart_request_all`): one round trip instead of three.
+- The ADCS cycle runs in two halves (read the sensors, then compute and command, 50 ms later), and the star tracker, whose reply ends only after 20 ms of silence, has a task of its own.
+
+**Verification.** Both campaigns of 14 October, on the corrected software: TC-05.9 passed on the PC (median 3.7 ms, longest 41.6 ms) and on the Pico (median 2.1 ms, longest 29.9 ms). Over the whole Pico campaign the command queue wait was 5.8 ms on average and 50 ms at most (test report, timing budget). Every other stage passed on both, apart from NCR-019.
+
+**Remaining.** A single slow simulator reply (up to 60–90 ms in this environment, on the PC as well) still sets the worst case, because a command waits for the task in progress. The OBC's clock is set from NOS3's TIME frames, which arrive with the link's latency; before the buffer fix the steps reached about 80 ms (seen as negative "time inside the OBC" in the ping measurement). Both are recorded as observations for the HIL campaign rather than defects.
+
+**Lesson.** The SDK's defaults suit printf over USB, not a flight computer streaming telemetry. A timing budget belongs in the design from the start, and only the target can measure it: the same source took 13 ms on the PC and 154 ms on the Pico.
+
+---
+
+## NCR-019
+
+**The COSMOS test commands the Pico before its restart**
+
+| | |
+|---|---|
+| Found by | The first full campaign with the OBC on the Pico (`tests/run_all.sh --pico`): TC-11.2 failed, `AUTO_MODES == 0 failed with value == 1` |
+| Item | Test script `tests/cosmos/test_cosmos_e2e.sh` with `sil/start_obc.sh` |
+| Severity | Minor: no flight software defect; one step without a valid result |
+| Status | Closed |
+
+**Root cause.** The COSMOS test began as soon as the simulation was running. A Linux OBC starts with the simulation, but the Pico is restarted first (`sil/start_obc.sh`), which takes a few seconds. The test's first command, automatic modes off, reached the Pico before its restart, and the restarted OBC came up with them on.
+
+**Correction.** `sil/start_obc.sh` prints `[obc] ready` once the OBC is up, and the COSMOS test waits for it as well as for the simulation.
+
+**Verification.** `tests/run_all.sh --pico cosmos`: 11 of 11 on the Pico; `tests/run_all.sh cosmos`: passed on the PC.
