@@ -68,6 +68,8 @@ class AdcsGround(Ground):
         for name, n in TRUTH_FIELDS:
             t[name] = struct.unpack(f">{n}d", d[off:off + 8 * n])
             off += 8 * n
+        if not any(t["svb"]):
+            return  # 42's first steps: the environment (Sun vector) isn't computed yet
         self.truth = t
 
     def pump(self, seconds, until=None):

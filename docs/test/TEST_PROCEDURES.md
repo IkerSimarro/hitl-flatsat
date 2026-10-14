@@ -27,6 +27,7 @@ Every test case is automated. The steps below are the checks its script makes, i
 | [TC-13](#tc-13) | FlatSat power measurement and wheel performance | `sil:hardware-twin` | 4 | automated |
 | [TC-14](#tc-14) | One-orbit endurance | `sil:orbit` | 5 | automated |
 | [TC-15](#tc-15) | Comparison with NASA's reference ADCS | `sil:reference` | 2 | blocked |
+| [TC-16](#tc-16) | OBC on the Pico, alone on the bench (hardware in the loop) | `hil:pico-bench` | 5 | automated |
 
 ## TC-01
 
@@ -318,3 +319,21 @@ The same scenario flown by NOS3's own flight software (cFS with the generic ADCS
 |---|---|---|---|
 | TC-15.1 | Detumble benchmark | informative: time to 2 deg/s, FlatSat vs cFS | SYS-01 |
 | TC-15.2 | Sun pointing benchmark | informative: time to 5 deg and steady-state error, FlatSat vs cFS | SYS-02 |
+
+## TC-16
+
+**OBC on the Pico, alone on the bench (hardware in the loop)**
+
+The flight software on its target hardware, against the same simulated spacecraft as the SIL: restart over USB, the bench configuration without the CAN bus, detumble and sun pointing checked against 42's truth.
+
+- **Stage:** `hil:pico-bench`
+- **Script:** `tests/system/test_pico_bench.py`
+- **Configuration:** The OBC firmware on a Raspberry Pi Pico 2, its umbilical on the Pico's USB port (attached to WSL with usbipd, SIL_UMB_DEV=/dev/ttyACM0); NOS3's deployment tip-off; no CAN boards fitted. The stage builds the firmware (tools/pico/build.sh), flashes it (tools/pico/flash.sh) and keeps the Pico attached across its restarts (tools/pico/attach.sh).
+
+| Step | Check | Pass criterion | Requirements |
+|---|---|---|---|
+| TC-16.1 | Commanded restart over USB | telemetry back within 20 s of OBC_REBOOT, reset cause COMMAND | SYS-06 |
+| TC-16.2 | CAN bus not fitted | no node alive but the OBC; nothing waits for the nodes | SYS-04 |
+| TC-16.3 | Detumble and hand-over | DETUMBLE within 60 s, SUN_POINT within 400 s of the restart | SYS-01 |
+| TC-16.4 | Sun pointing converges | converged, Sun angle < 5 deg by 42's truth | SYS-02 |
+| TC-16.5 | A minute of sun pointing | SUN_POINT throughout, Sun angle < 2 deg, no event of WARNING severity or above | SYS-02, SYS-03 |

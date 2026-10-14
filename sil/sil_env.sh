@@ -157,8 +157,15 @@ fi
 # instead of letting it look like a flight software failure. (42's own *.42 output files can't be used: they
 # are written in buffered chunks a couple of minutes apart.)
 sim_time() { tail -c 4000 "$SIL_LOG_DIR/truth42sim.log" 2> /dev/null | grep -o "([0-9/]*)T[0-9:.]*" | tail -1; }
-(last=""; same=0; stalled=0
+# A NaN actuator command makes 42's dynamics NaN for good ("u[0] is NaN in KaneNBodyRK4"); the simulators
+# then read zeros. Same treatment (NCR-017).
+(last=""; same=0; stalled=0; nan=0
  while sleep 3; do
+     if [ $nan = 0 ] && grep -q "is NaN" "$SIL_LOG_DIR/42.log" 2> /dev/null; then
+         log "WARNING: 42's dynamics went NaN (an actuator was commanded with a non-number): results from now on are invalid"
+         grep -m1 "is NaN" "$SIL_LOG_DIR/42.log" > "$SIL_LOG_DIR/42-nan.txt"
+         nan=1
+     fi
      cur=$(sim_time)
      if [ -n "$cur" ] && [ "$cur" = "$last" ]; then
          same=$((same + 1))

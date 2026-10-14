@@ -2,7 +2,7 @@
 
 A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, tested against a simulated orbit from NASA's [NOS3](https://github.com/nasa/nos3) small-satellite testbed.
 
-> **Status:** software-in-the-loop test campaign (October 2026): the flight software, the CAN nodes, the attitude control and the radio link all run against NOS3, verified against eight system requirements. The hardware build follows.
+> **Status:** the flight software runs on its first Raspberry Pi Pico 2 against NOS3 (hardware in the loop, October 2026), after a software-in-the-loop campaign against eight system requirements. The CAN, power and radio boards come next.
 
 ## What it looks like
 
@@ -31,12 +31,12 @@ The flight computer has just detumbled the spacecraft after deployment and point
 | Path | Contents |
 |---|---|
 | `nos3/` | Submodule: [fork of NOS3](https://github.com/IkerSimarro/nos3) (`hitl` branch). Adds the HIL bridge component (`components/hil_bridge`) and the `HIL=1` launch mode. |
-| `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `obc/`: flight computer software (commands, modes, events, telemetry, sensor acquisition, attitude control); `obc/adcs/`: ADCS control laws (B-dot, sun pointing, momentum management); `obc/devices/`: drivers for the NOS3-simulated sensors and actuators; `nodes/adcs/`: reaction wheel speed control node; `nodes/eps/`: power monitoring and load switch node; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN, shared-memory plant harness); `sil_plant/`: plant model of the physical FlatSat (wheel motor, 18650 cell, charger, rails); `tests/`: unit tests on a fake HAL and the SIL device test. Pico backend *(planned)*. |
+| `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `obc/`: flight computer software (commands, modes, events, telemetry, sensor acquisition, attitude control); `obc/adcs/`: ADCS control laws (B-dot, sun pointing, momentum management); `obc/devices/`: drivers for the NOS3-simulated sensors and actuators; `nodes/adcs/`: reaction wheel speed control node; `nodes/eps/`: power monitoring and load switch node; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN, shared-memory plant harness); `sil_plant/`: plant model of the physical FlatSat (wheel motor, 18650 cell, charger, rails); `hal/pico/`: the Raspberry Pi Pico 2 backend (USB umbilical, watchdog, status LED; CAN comes with the CAN boards); `tests/`: unit tests on a fake HAL, the SIL device test and on-target checks (`tests/pico/`). |
 | `ground/` | Ground station software (`flatsat_gs.py`): contact windows and pass prediction from 42's orbit, an RF link emulator with a flight-like link budget, and a telecommand queue. Also the RF frame code (`flatsat_rf.py`) and the generated Python codec (`flatsat_icd.py`). The COSMOS targets `FLATSAT` (umbilical) and `FLATSAT_RF` (radio), with their screens, are generated into the NOS3 fork (`nos3/components/hil_bridge/gsw/`). |
 | `sil/` | Software-in-the-loop environment: NOS3 simulators, 42 and the HIL bridge in one container (`sil/sil.sh`), the plant model and CAN nodes (`sil/start_nodes.sh`), and the one-command launcher (`sil/launch.sh`) |
 | `tests/` | Unit tests, COSMOS definition cross-check and headless COSMOS end-to-end test (`tests/cosmos/`), system tests (`tests/system/`), the regression campaign (`tests/run_all.sh`) |
 | `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft) with generated [byte layouts](docs/icd/ICD_layouts.md); [ADCS design note](docs/design/ADCS_DESIGN.md); [non-conformance log](docs/ncr/NCR_LOG.md); [system requirements](docs/requirements/REQUIREMENTS.md), [test plan](docs/test/TEST_PLAN.md), [test procedures](docs/test/TEST_PROCEDURES.md) and the [test report](docs/test/report/TEST_REPORT.md) |
-| `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml`. `test_docs.py`: generates the requirements and test procedures from `docs/test/verification.yaml`. `test_report.py`: writes a campaign's test report (results, plots, traceability, defects). `capture_screens.sh`: screenshots of the COSMOS screens with live data. |
+| `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml`. `test_docs.py`: generates the requirements and test procedures from `docs/test/verification.yaml`. `test_report.py`: writes a campaign's test report (results, plots, traceability, defects). `capture_screens.sh`: screenshots of the COSMOS screens with live data. `pico/`: the Pico 2 build image and scripts to build, flash and attach the firmware. |
 | `hardware/` | [Bill of materials](hardware/BOM.md); wiring diagram and harness definition *(planned)* |
 
 ## Getting started
@@ -71,6 +71,24 @@ In COSMOS, accept the agreement and start the **Command and Telemetry Server** (
 
 Ctrl-C in the terminal stops everything. To put the ground station elsewhere, set `SIL_GS_ARGS` (for example `"--lat 37.9402 --lon -75.4664"` for NASA Wallops, with a pass about 4 minutes in). Or use the screen's contact buttons.
 
+### Run it on a Raspberry Pi Pico 2
+
+The OBC firmware also runs on a Pico 2, with its umbilical on the Pico's USB port: hardware in the loop. Under WSL the port reaches Linux through [usbipd-win](https://github.com/dorssel/usbipd-win).
+
+```bash
+tools/pico/build.sh         # firmware/build-pico/obc.uf2 (Pico SDK 2.3.1, in Docker)
+tools/pico/flash.sh         # restarts the Pico in its bootloader, copies the firmware, attaches it to WSL
+sil/launch.sh --pico        # as above, with the Pico as the flight computer (no CAN nodes yet)
+tests/run_all.sh hil        # test case TC-16 on the Pico
+```
+
+The first time:
+1. Hold the Pico's BOOTSEL button while plugging it in, then run `tools/pico/flash.sh`. Later flashes need no button.
+2. In PowerShell as administrator, install usbipd-win and share the FlatSat firmware's USB ID:
+   `winget install --exact dorssel.usbipd-win`, then `usbipd bind --hardware-id 2e8a:0009`.
+
+The on-board LED blinks twice a second while the flight software runs.
+
 See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.md) for the bridge protocol and the end-to-end test.
 
 ### Tests
@@ -78,6 +96,8 @@ See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.m
 The FlatSat is verified against eight [system requirements](docs/requirements/REQUIREMENTS.md) (detumble, sun pointing, fault response, node and bus health, power, commanding, RF link, physical wheel). The [test plan](docs/test/TEST_PLAN.md) describes the approach. The [test procedures](docs/test/TEST_PROCEDURES.md) list fifteen test cases, each with numbered steps and pass criteria. Every step traces to a requirement, and each automated check prints its step ID ("PASS [TC-08.3] ..."). The [test report](docs/test/report/TEST_REPORT.md) gives the latest campaign's results, plots and traceability matrix. Defects found along the way are in the [NCR log](docs/ncr/NCR_LOG.md).
 
 **Latest campaign (6 October 2026):** 104 of 104 automated steps passed and all eight requirements are verified, including a full orbit without intervention: sun pointing within 0.04° in sunlight, the eclipse detected within 1 s. The benchmark against NASA's reference attitude control (TC-15) is blocked by [NCR-015](docs/ncr/NCR_LOG.md#ncr-015).
+
+**First hardware-in-the-loop run (14 October 2026):** the OBC on a Pico 2 detumbled NOS3's spacecraft and pointed it at the Sun (TC-16, 5 of 5). In its first minute it found a defect that 104 SIL steps couldn't: the Pico SDK's `printf` formats a negative zero as "nan", which reached 42 as a NaN wheel torque ([NCR-017](docs/ncr/NCR_LOG.md#ncr-017)).
 
 ```bash
 tests/run_all.sh            # the regression campaign, with a summary table and a test report (about 30 minutes)

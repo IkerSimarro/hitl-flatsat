@@ -327,3 +327,22 @@ test_cases:
     steps:
       - {id: TC-15.1, title: "Detumble benchmark", criterion: "informative: time to 2 deg/s, FlatSat vs cFS", reqs: [SYS-01]}
       - {id: TC-15.2, title: "Sun pointing benchmark", criterion: "informative: time to 5 deg and steady-state error, FlatSat vs cFS", reqs: [SYS-02]}
+
+  - id: TC-16
+    title: OBC on the Pico, alone on the bench (hardware in the loop)
+    stage: hil:pico-bench
+    script: tests/system/test_pico_bench.py
+    config: >-
+      The OBC firmware on a Raspberry Pi Pico 2, its umbilical on the Pico's USB port (attached to WSL with usbipd,
+      SIL_UMB_DEV=/dev/ttyACM0); NOS3's deployment tip-off; no CAN boards fitted. The stage builds the firmware
+      (tools/pico/build.sh), flashes it (tools/pico/flash.sh) and keeps the Pico attached across its restarts
+      (tools/pico/attach.sh).
+    objective: >-
+      The flight software on its target hardware, against the same simulated spacecraft as the SIL: restart over USB,
+      the bench configuration without the CAN bus, detumble and sun pointing checked against 42's truth.
+    steps:
+      - {id: TC-16.1, title: "Commanded restart over USB", criterion: "telemetry back within 20 s of OBC_REBOOT, reset cause COMMAND", reqs: [SYS-06]}
+      - {id: TC-16.2, title: "CAN bus not fitted", criterion: "no node alive but the OBC; nothing waits for the nodes", reqs: [SYS-04]}
+      - {id: TC-16.3, title: "Detumble and hand-over", criterion: "DETUMBLE within 60 s, SUN_POINT within 400 s of the restart", reqs: [SYS-01]}
+      - {id: TC-16.4, title: "Sun pointing converges", criterion: "converged, Sun angle < 5 deg by 42's truth", reqs: [SYS-02]}
+      - {id: TC-16.5, title: "A minute of sun pointing", criterion: "SUN_POINT throughout, Sun angle < 2 deg, no event of WARNING severity or above", reqs: [SYS-02, SYS-03]}

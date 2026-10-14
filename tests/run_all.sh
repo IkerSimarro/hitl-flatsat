@@ -9,6 +9,7 @@
 #
 #   tests/run_all.sh            every stage except the long one (the one-orbit endurance test, ~100 min)
 #   tests/run_all.sh all        every stage except the blocked one (TC-15: tests/run_all.sh reference)
+#                               and the hardware ones (a Pico on USB: tests/run_all.sh hil)
 #   tests/run_all.sh unit sil   only the stages whose name contains one of the words
 #
 ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/.." &> /dev/null && pwd )
@@ -47,15 +48,17 @@ STAGES=(
     "sil:reference    D=\$SIL_LOG_DIR; SIL_INIT_RATES='2 -3 4' SIL_LOG_DIR=\$D/flatsat sil/sil.sh '$NODES python3 tests/system/test_reference_adcs.py --fsw flatsat'; SIL_INIT_RATES='2 -3 4' SIL_NO_BRIDGE=1 SIL_DOCKER_ARGS='--sysctl fs.mqueue.msg_max=10000 --ulimit rtprio=99 --cap-add=sys_nice' SIL_LOG_DIR=\$D/cfs sil/sil.sh 'python3 tests/system/test_reference_adcs.py --fsw cfs'; python3 tests/system/test_reference_adcs.py --compare \$D"
     "sil:orbit        sil/sil.sh '$NODES python3 tests/system/test_orbit.py'"
     "e2e:cosmos       tests/cosmos/test_cosmos_e2e.sh"
+    "hil:pico-bench   tools/pico/build.sh > /dev/null && tools/pico/flash.sh && SIL_UMB_DEV=/dev/ttyACM0 tools/pico/attach.sh -- sil/sil.sh 'python3 tests/system/test_pico_bench.py'"
 )
 
 LONG="sil:orbit"         # only with "all" or by name (about 100 minutes)
 BLOCKED="sil:reference"  # only by name: its test case is blocked (TC-15, NCR-015)
+HARDWARE="hil:pico-bench" # only by name: needs a Pico on USB (tests/run_all.sh hil)
 
 selected()
 {
-    [ $# -le 1 ] && [[ " $LONG $BLOCKED " != *" $1 "* ]] && return 0
-    [ "${2:-}" = all ] && [[ " $BLOCKED " != *" $1 "* ]] && return 0
+    [ $# -le 1 ] && [[ " $LONG $BLOCKED $HARDWARE " != *" $1 "* ]] && return 0
+    [ "${2:-}" = all ] && [[ " $BLOCKED $HARDWARE " != *" $1 "* ]] && return 0
     [ $# -le 1 ] && return 1
     local w
     for w in "${@:2}"; do [[ $1 == *$w* ]] && return 0; done

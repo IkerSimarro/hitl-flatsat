@@ -33,7 +33,7 @@ fail() { echo "[launch] $*" >&2; exit 1; }
 
 # ---- Preconditions ----
 if [ -n "$PICO" ]; then
-    [ -e "$PICO" ] || fail "no Pico at $PICO: plug it in and attach it to WSL (usbipd attach --wsl --busid ...)"
+    [ -e "$PICO" ] || "$ROOT/tools/pico/attach.sh" || fail "no Pico at $PICO: plug it in (see README, Pico)"
 else
     [ -x "$ROOT/firmware/build/obc" ] || fail "OBC not built: see README (firmware build)"
 fi
@@ -84,6 +84,9 @@ if [ -n "$PICO" ]; then
 else
     SPACE='sil/start_nodes.sh && firmware/build/obc --umb-pty $SIL_UMB_PTY 2>&1 | tee $SIL_LOG_DIR/obc.log'
 fi
+# With the Pico, tools/pico/attach.sh keeps it attached to WSL across its restarts
+KEEP_ATTACHED=""
+[ -n "$PICO" ] && KEEP_ATTACHED="$ROOT/tools/pico/attach.sh --"
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_GRAPHICS=$((1 - HEADLESS)) SIL_DOCKER_ARGS="$X11_ARGS" SIL_TTY=0 \
-    SIL_UMB_DEV=$PICO "$ROOT/sil/sil.sh" "$SPACE" &
+    SIL_UMB_DEV=$PICO $KEEP_ATTACHED "$ROOT/sil/sil.sh" "$SPACE" &
 wait $!

@@ -26,7 +26,7 @@ The HIL bridge, the NOS3 simulators, 42, COSMOS and the plant model form the tes
 | Software-in-the-loop (SIL) | The real flight software of all three nodes and the real ground station | Linux processes in Docker. NOS3 device simulators and 42 provide sensors and dynamics, virtual CAN (`vcan0`) the bus, a plant model the FlatSat's motor and battery, COSMOS the ground. | System behaviour against the requirements: the campaign this plan covers now |
 | Hardware-in-the-loop (HIL) | The same flight software on Raspberry Pi Pico 2 boards | Real CAN bus, reaction wheel, power board and LoRa radios; NOS3 and 42 still simulate the orbit and the spacecraft's sensors | Phase 7: the same test cases again on hardware, plus measurements that only hardware can give |
 
-The flight software is identical at the SIL and HIL levels; only the hardware abstraction layer changes. That is why a SIL result carries over to HIL, and why a difference between them points at the hardware or its interfaces.
+The flight software's source is identical at the SIL and HIL levels; the hardware abstraction layer changes, and so do the compiler and the C library. A SIL result therefore carries over to HIL only as far as those allow: a difference between them points at the hardware, its interfaces or the target's toolchain. The first HIL run showed why the last one matters: the Pico SDK's `printf` turned a negative zero into "nan" ([NCR-017](../ncr/NCR_LOG.md#ncr-017)).
 
 ## 3. Approach
 

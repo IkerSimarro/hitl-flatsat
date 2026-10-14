@@ -16,12 +16,12 @@ Verification methods: T test, A analysis, I inspection, D demonstration.
 
 | ID | Requirement | Methods | Verified by |
 |---|---|---|---|
-| [SYS-01](#sys-01) | Autonomous detumble | A, T | TC-02, TC-08, TC-15 |
-| [SYS-02](#sys-02) | Sun pointing | A, T | TC-02, TC-08, TC-14, TC-15 |
-| [SYS-03](#sys-03) | Sensor and actuator fault response | T | TC-07, TC-08, TC-12, TC-14 |
-| [SYS-04](#sys-04) | Subsystem node and bus health | T | TC-02, TC-06, TC-12 |
+| [SYS-01](#sys-01) | Autonomous detumble | A, T | TC-02, TC-08, TC-15, TC-16 |
+| [SYS-02](#sys-02) | Sun pointing | A, T | TC-02, TC-08, TC-14, TC-15, TC-16 |
+| [SYS-03](#sys-03) | Sensor and actuator fault response | T | TC-07, TC-08, TC-12, TC-14, TC-16 |
+| [SYS-04](#sys-04) | Subsystem node and bus health | T | TC-02, TC-06, TC-12, TC-16 |
 | [SYS-05](#sys-05) | Power management | T | TC-06, TC-08, TC-13, TC-14 |
-| [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14 |
+| [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14, TC-16 |
 | [SYS-07](#sys-07) | RF link and ground segment | T, D | TC-01, TC-02, TC-09, TC-10, TC-11 |
 | [SYS-08](#sys-08) | Physical reaction wheel | A, T | TC-02, TC-06, TC-12, TC-13 |
 
@@ -38,6 +38,7 @@ From any body rate up to 10 deg/s, the spacecraft shall detect the tumble and re
 - [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.3
 - [TC-08](../test/TEST_PROCEDURES.md#tc-08) Attitude control in the loop with 42: steps 08.1, 08.2
 - [TC-15](../test/TEST_PROCEDURES.md#tc-15) Comparison with NASA's reference ADCS *(blocked)*: steps 15.1
+- [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.3
 
 ## SYS-02
 
@@ -53,6 +54,7 @@ In sunlight, the spacecraft shall bring its +X axis within 5 deg of the Sun with
 - [TC-08](../test/TEST_PROCEDURES.md#tc-08) Attitude control in the loop with 42: steps 08.3, 08.4
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.1, 14.2, 14.3, 14.4
 - [TC-15](../test/TEST_PROCEDURES.md#tc-15) Comparison with NASA's reference ADCS *(blocked)*: steps 15.2
+- [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.4, 16.5
 
 ## SYS-03
 
@@ -68,6 +70,7 @@ A sensor or actuator that delivers no valid data for 2.5 s shall be declared fai
 - [TC-08](../test/TEST_PROCEDURES.md#tc-08) Attitude control in the loop with 42: steps 08.5
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.1, 12.2
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.5
+- [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.5
 
 ## SYS-04
 
@@ -82,6 +85,7 @@ The flight computer shall detect and report the loss of the ADCS or EPS node, in
 - [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.1
 - [TC-06](../test/TEST_PROCEDURES.md#tc-06) CAN nodes, FlatSat power and the physical wheel: steps 06.1, 06.5, 06.7, 06.8, 06.9
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.3, 12.4, 12.5
+- [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.2
 
 ## SYS-05
 
@@ -115,6 +119,7 @@ Every telecommand shall be validated (checksum, length, function code, argument 
 - [TC-08](../test/TEST_PROCEDURES.md#tc-08) Attitude control in the loop with 42: steps 08.8
 - [TC-11](../test/TEST_PROCEDURES.md#tc-11) Ground segment end to end (COSMOS): steps 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.5
+- [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.1
 
 ## SYS-07
 

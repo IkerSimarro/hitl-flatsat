@@ -5,9 +5,13 @@
 **   "SET_TORQUE=<%.6e Nm>"    -> "SET_TORQUE=<Nm>"
 ** NOS3's cFS driver formats the torque as %10.4f: 0.1 mN m steps on a 1 mN m wheel, which rounds fine-pointing
 ** torques to zero. The simulator parses any floating-point format.
+** Torques below 1e-12 N m (far below the wheel's resolution) are sent as 0. That also turns a negative zero
+** (a wheel torque is the negated body torque) into "0": the Pico SDK's printf formatted -0.0 as "nane-308",
+** which the simulator read as NaN and passed to 42 (NCR-017).
 ** Replies have no terminator, so a reply is complete when the line goes quiet. NOS3's cFS driver reads
 ** immediately after writing, which only works on a zero-latency simulated bus.
 */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +68,10 @@ int dev_rw_set_torque(uint8_t wheel, double torque_nm)
     if (!(torque_nm >= -DEV_RW_MAX_TORQUE && torque_nm <= DEV_RW_MAX_TORQUE)) /* also rejects NaN */
     {
         return DEV_ERR_ARG;
+    }
+    if (fabs(torque_nm) < DEV_RW_MIN_TORQUE)
+    {
+        torque_nm = 0.0;
     }
     snprintf(req, sizeof(req), "SET_TORQUE=%.6e", torque_nm);
     rc = request(wheel, req, reply);

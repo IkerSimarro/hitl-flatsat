@@ -122,6 +122,7 @@ int dev_radio_set_power(int8_t dbm);
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 
 #define DEV_RW_MAX_TORQUE 0.001 /* N m (42 SC_NOS3.txt) */
+#define DEV_RW_MIN_TORQUE 1e-12 /* N m: smaller torques are sent as 0 (NCR-017) */
 
 int dev_rw_get_momentum(uint8_t wheel, double *momentum_nms);
 /* torque on the wheel (the body feels the opposite), up to DEV_RW_MAX_TORQUE */

@@ -20,6 +20,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-014](#ncr-014) | 2026-10-06 | A frozen magnetometer is not detected; the detumble silently stops | Major | Closed |
 | [NCR-015](#ncr-015) | 2026-10-06 | NOS3's reference ADCS drives the wheels beyond their limit in the SIL environment | Minor | Open |
 | [NCR-016](#ncr-016) | 2026-10-06 | Two test scripts report failures the flight software didn't cause | Minor | Closed |
+| [NCR-017](#ncr-017) | 2026-10-14 | On the Pico, a zero wheel torque is sent as "nan" and destroys the simulation | Critical | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -434,4 +435,44 @@ The wheel simulators' logs show the ADCS commanding wheel torques of up to ±16.
 **Verification.** The whole campaign was rerun on the corrected scripts (`tests/run_all.sh all`, run `run-20261006-170641`, the one in the [test report](../test/report/TEST_REPORT.md)): TC-05 passed 12 of 12 steps and TC-14 5 of 5. Over the orbit the OBC raised three events, all INFO.
 
 **Lesson.** A script edit made by search and replace is a change to the test: rerun the script before the campaign. A pass criterion should test a defined attribute (here the event severity), not the wording of a message.
+
+---
+
+## NCR-017
+
+**On the Pico, a zero wheel torque is sent as "nan" and destroys the simulation**
+
+| | |
+|---|---|
+| Found by | The first hardware-in-the-loop run: the OBC on the Raspberry Pi Pico 2, flying NOS3's spacecraft over USB (later TC-16) |
+| Item | OBC reaction wheel driver (`firmware/obc/devices/dev_rw.c`) on the Pico; the Pico SDK 2.3.1's `printf` (`pico_printf`) |
+| Severity | Critical: one command invalidated everything after it, and on a spacecraft it would command an actuator with garbage |
+| Status | Closed |
+
+**Observation.** About 4 s after the OBC switched to SUN_POINT, the reaction wheels stopped answering and the magnetometer froze; the OBC declared both failed and went to SAFE, as designed. 42's log showed `Oops! u[0] is NaN in KaneNBodyRK4 at SimTime = 68.049996`. From then on 42 reported zeros (position, Sun vector, field) and its clock jumped back and forth; the simulators that read 42's data logged parse errors and stopped answering. The same software had never done this in the SIL campaign (Linux build).
+
+**Investigation.**
+- The wheel simulators' logs showed the request just before 42 failed: `SET_TORQUE=nane-308`, on all three wheels. The simulator parsed "nan" and passed a NaN torque to 42.
+- The driver already rejects NaN torques, so the value was a valid number that was formatted wrongly. The driver formats with `%.6e`.
+- An on-target test (`firmware/tests/pico/test_target_format.c`, flashed to the Pico) formatted a set of values with the SDK's `printf` and with the C library's:
+
+  | Value | SDK `printf` | C library `printf` |
+  |---|---|---|
+  | +0.0 | `0.000000e+00` | `0.000000e+00` |
+  | −0.0 | `nane-308` | `-0.000000e+00` |
+  | 2.2×10⁻³⁰⁸ (smallest normal double) | `infe-308` | `2.225074e-308` |
+  | subnormal doubles | `nane-308` | `0.000000e+00` |
+
+**Root cause.** A wheel torque is the negated body torque (`rw_torque[i] = -body_torque[i]`), so a body torque of exactly zero gives −0.0. The SDK's `%e` code treats zero specially only when all the bits are zero; −0.0 has the sign bit set, so it goes through the general path, which takes the logarithm of zero and prints `nan` with the exponent clamp `e-308`. glibc, used by the Linux build, formats −0.0 correctly, which is why the SIL never showed it.
+
+**Correction.**
+- The OBC on the Pico uses the C library's `printf` (`pico_set_printf_implementation(obc compiler)`; +22 KB of flash).
+- The wheel driver sends any torque below 10⁻¹² N m (far below the wheel's resolution) as 0, which also removes the negative zero, whichever `printf` formats it.
+- The SIL environment now reports 42's dynamics going NaN as loudly as a stall ("results from now on are invalid", `42-nan.txt`), so a run like this can't be mistaken for a flight software failure.
+
+**Verification.** On the Pico: TC-16 passed 5 of 5 (restart over USB, detumble, sun pointing converged to 1.0° by 42's truth, a minute of sun pointing without a warning). No NaN in 42's log. The Linux build passed its unit tests and the SIL stages after the change.
+
+**Not changed.** NOS3's wheel simulator and 42 accept a NaN torque without complaint. They are NASA's components (a submodule of the NOS3 fork), so they were left as they are; the SIL watchdog covers the consequence.
+
+**Lesson.** The same source on a new target is a new configuration: the C library differs as well as the processor. Hardware-in-the-loop found in its first minute what 104 SIL steps couldn't, because the SIL never ran the target's library. The SDK issue is worth reporting upstream (raspberrypi/pico-sdk, `pico_printf` `_etoa`).
 
