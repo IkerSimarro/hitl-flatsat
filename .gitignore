@@ -1,5 +1,6 @@
 # Build outputs
 build/
+build-pico/
 *.o
 *.uf2
 *.elf

@@ -172,6 +172,11 @@ void fake_can_inject(uint16_t id, const void *data, uint8_t dlc)
     can_rx_head++;
 }
 
+int fs_hal_can_present(void)
+{
+    return 1;
+}
+
 int fs_hal_can_send(const fs_can_frame_t *f)
 {
     if (fake_can_sent_count < FAKE_CAN_MAX)

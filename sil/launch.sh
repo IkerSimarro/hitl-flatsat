@@ -4,8 +4,10 @@
 #
 #   sil/launch.sh             42 3D view + COSMOS ground station GUI + simulators + OBC + bridge
 #   sil/launch.sh --headless  the same without windows (COSMOS server only)
+#   sil/launch.sh --pico      the OBC is the Raspberry Pi Pico on USB (/dev/ttyACM0, or $PICO_DEV), attached
+#                             to WSL with usbipd; no CAN nodes (they need the CAN boards). Combines with --headless
 #
-# The OBC runs as a Linux process with its umbilical on a pty; everything else is NOS3. Ctrl-C stops
+# Otherwise the OBC runs as a Linux process with its umbilical on a pty; everything else is NOS3. Ctrl-C stops
 # everything. Before the first run: build NOS3 (make prep, config, all, in nos3/), run
 # nos3/scripts/gsw/gsw_cosmos_build.sh, and build the firmware (see README).
 #
@@ -18,12 +20,23 @@ SIL_NAME=flatsat-sil
 COSMOS_NAME=flatsat-cosmos
 
 HEADLESS=0
-[ "${1:-}" = "--headless" ] && HEADLESS=1
+PICO=""
+for arg in "$@"; do
+    case $arg in
+        --headless) HEADLESS=1 ;;
+        --pico) PICO=${PICO_DEV:-/dev/ttyACM0} ;;
+        *) echo "usage: $0 [--headless] [--pico]" >&2; exit 2 ;;
+    esac
+done
 
 fail() { echo "[launch] $*" >&2; exit 1; }
 
 # ---- Preconditions ----
-[ -x "$ROOT/firmware/build/obc" ] || fail "OBC not built: see README (firmware build)"
+if [ -n "$PICO" ]; then
+    [ -e "$PICO" ] || fail "no Pico at $PICO: plug it in and attach it to WSL (usbipd attach --wsl --busid ...)"
+else
+    [ -x "$ROOT/firmware/build/obc" ] || fail "OBC not built: see README (firmware build)"
+fi
 [ -x "$ROOT/nos3/sims/build/bin/nos3-hil-bridge" ] || fail "NOS3 not built: run make in nos3/"
 [ -d "$COSMOS_DIR/COMPONENTS/FLATSAT" ] || fail "COSMOS not prepared: run nos3/scripts/gsw/gsw_cosmos_build.sh"
 grep -q "FLATSAT_UMB" "$COSMOS_DIR/config/tools/cmd_tlm_server/cmd_tlm_server.txt" ||
@@ -64,6 +77,13 @@ export SIL_LOG_DIR=$ROOT/sil/logs/launch-$(date +%Y%m%d-%H%M%S)
 echo "[launch] logs in $SIL_LOG_DIR"
 # Runs as a background job so Ctrl-C reaches this script's trap straight away (bash defers traps
 # while a foreground child runs); the trap removes the containers, which ends the job.
+if [ -n "$PICO" ]; then
+    # The Pico's log lines arrive over the umbilical; show them, and the link coming and going
+    echo "[launch] OBC: the Pico on $PICO"
+    SPACE='tail -F $SIL_LOG_DIR/bridge.log 2> /dev/null | grep --line-buffered -E "MCU: |serial device|MCU link"'
+else
+    SPACE='sil/start_nodes.sh && firmware/build/obc --umb-pty $SIL_UMB_PTY 2>&1 | tee $SIL_LOG_DIR/obc.log'
+fi
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_GRAPHICS=$((1 - HEADLESS)) SIL_DOCKER_ARGS="$X11_ARGS" SIL_TTY=0 \
-    "$ROOT/sil/sil.sh" 'sil/start_nodes.sh && firmware/build/obc --umb-pty $SIL_UMB_PTY 2>&1 | tee $SIL_LOG_DIR/obc.log' &
+    SIL_UMB_DEV=$PICO "$ROOT/sil/sil.sh" "$SPACE" &
 wait $!

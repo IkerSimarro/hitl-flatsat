@@ -218,6 +218,7 @@ void    obc_can_poll(void);
 void    obc_can_task_fast(void); /* 10 Hz: MODE on change, RW_CMD, wheel telemetry watchdog */
 void    obc_can_task_slow(void); /* 1 Hz: HEARTBEAT, TIME_SYNC, MODE, node monitor */
 uint8_t obc_can_alive_mask(void);
+int     obc_can_fitted(void);    /* 0 on a bench set-up without the CAN bus: the nodes aren't fitted */
 int     obc_can_switch(uint8_t sw, uint8_t on);
 int     obc_can_node_command(uint8_t node, uint8_t cmd);
 

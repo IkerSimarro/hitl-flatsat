@@ -264,9 +264,10 @@ void obc_adcs_auto(void)
             }
             break;
         case FLATSAT_MODE_DETUMBLE:
-            /* Sun pointing uses the wheels, so the ADCS node (the physical wheel) must be up too */
+            /* Sun pointing uses the wheels, so the ADCS node (the physical wheel) must be up too, if fitted */
             if (held(&since_detumbled,
-                     rates_ok && rate < ADCS_DETUMBLED_RATE && (obc_can_alive_mask() & (1u << FLATSAT_NODE_ADCS)),
+                     rates_ok && rate < ADCS_DETUMBLED_RATE &&
+                         (!obc_can_fitted() || (obc_can_alive_mask() & (1u << FLATSAT_NODE_ADCS))),
                      ADCS_DETUMBLED_TIME_S, now))
             {
                 obc_event(EVT_ADCS, FLATSAT_SEVERITY_INFO, "detumbled at %.2f deg/s: SUN_POINT", rate / ADCS_DEG);

@@ -7,6 +7,8 @@
 ** - commands the physical wheel at 10 Hz: it mirrors simulated wheel 0 at MIRROR_SCALE (ICD DD-05), or
 **   follows the TEST-mode override; no RW_TLM for 500 ms while commanding is a wheel fault
 ** - collects the EPS node's measurements for EPS_REAL and forwards switch and reset commands
+** Without a CAN controller (a bench set-up of the OBC alone) the nodes aren't fitted: none of this runs, and
+** nothing that needs them waits for them.
 */
 #include <math.h>
 #include <string.h>
@@ -28,6 +30,7 @@ static uint8_t  last_mode_sent = 0xFF;
 static uint8_t  rw_seq;
 static uint8_t  sw_seq;
 static uint64_t rw_cmd_since_us; /* when the wheel was last commanded from OFF to on, 0 = not commanding */
+static int      bus_fitted;
 
 static const char *node_name(uint8_t node)
 {
@@ -60,7 +63,7 @@ static void on_heartbeat(uint8_t src, const void *payload, uint8_t dlc)
     if (!n->alive)
     {
         obc_event(EVT_NODE_UP, FLATSAT_SEVERITY_INFO, "%s node up (uptime %u s, reset cause %u)", node_name(src),
-                  hb->uptime, hb->reset_cause);
+                  (unsigned)hb->uptime, hb->reset_cause);
     }
     n->alive       = 1;
     n->last_us     = now;
@@ -189,6 +192,10 @@ void obc_can_task_fast(void)
     int16_t              setpoint;
     uint64_t             now = fs_hal_time_us();
 
+    if (!bus_fitted)
+    {
+        return;
+    }
     if (obc.mode != last_mode_sent)
     {
         send_mode();
@@ -235,6 +242,11 @@ void obc_can_task_slow(void)
     uint64_t                now_us = fs_hal_time_us();
     unsigned                i;
 
+    if (!bus_fitted)
+    {
+        return;
+    }
+
     memset(&hb, 0, sizeof(hb));
     hb.uptime      = (uint32_t)(now_us / 1000000u);
     hb.state       = obc.mode == FLATSAT_MODE_SAFE ? FLATSAT_NODE_STATE_SAFE : FLATSAT_NODE_STATE_NOMINAL;
@@ -269,6 +281,11 @@ void obc_can_task_slow(void)
 
 void obc_can_init(void)
 {
+    bus_fitted = fs_hal_can_present();
+    if (!bus_fitted)
+    {
+        fs_hal_log("no CAN controller: ADCS and EPS nodes not fitted");
+    }
     fs_can_init(FLATSAT_NODE_OBC);
     fs_can_subscribe(FLATSAT_CAN_HEARTBEAT_TYPE, on_heartbeat);
     fs_can_subscribe(FLATSAT_CAN_FAULT_TYPE, on_fault);
@@ -281,7 +298,15 @@ void obc_can_init(void)
 
 void obc_can_poll(void)
 {
-    fs_can_poll();
+    if (bus_fitted)
+    {
+        fs_can_poll();
+    }
+}
+
+int obc_can_fitted(void)
+{
+    return bus_fitted;
 }
 
 uint8_t obc_can_alive_mask(void)

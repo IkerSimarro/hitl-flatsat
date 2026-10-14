@@ -259,6 +259,11 @@ int fs_hal_umb_read(uint8_t *buf, size_t max)
 
 /* ---- CAN ---- */
 
+int fs_hal_can_present(void)
+{
+    return can_fd >= 0;
+}
+
 int fs_hal_can_send(const fs_can_frame_t *frame)
 {
     struct can_frame cf;

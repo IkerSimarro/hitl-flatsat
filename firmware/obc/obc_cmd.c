@@ -120,7 +120,7 @@ static void exec_obc(const fs_cmd_t *cmd, fs_time_t rx_time)
             fs_time_t t = {a.seconds, a.subseconds};
             fs_time_sync(t, 0);
             accept(cmd);
-            obc_event(EVT_TIME_SET, FLATSAT_SEVERITY_INFO, "time set to %u s, correction %lld us", a.seconds,
+            obc_event(EVT_TIME_SET, FLATSAT_SEVERITY_INFO, "time set to %u s, correction %lld us", (unsigned)a.seconds,
                       (long long)fs_time_last_correction_us());
             break;
         }

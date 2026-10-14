@@ -1,13 +1,24 @@
 cmake_minimum_required(VERSION 3.13)
 
-# linux: software-in-the-loop executables and unit tests; pico: RP2350 firmware (Phase 4)
+# linux: software-in-the-loop executables and unit tests; pico: Raspberry Pi Pico 2 firmware (tools/pico/build.sh)
 set(FLATSAT_PLATFORM linux CACHE STRING "Target platform: linux or pico")
 
-project(flatsat_firmware C)
+if(FLATSAT_PLATFORM STREQUAL "pico")
+    set(PICO_BOARD pico2 CACHE STRING "Pico SDK board")
+    include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+    project(flatsat_firmware C CXX ASM)
+    pico_sdk_init()
+else()
+    project(flatsat_firmware C)
+endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
-add_compile_options(-Wall -Wextra -Wpedantic -Werror)
+# Our code is built with every warning as an error; on the Pico only our sources, not the SDK's
+set(FLATSAT_WARNINGS -Wall -Wextra -Wpedantic -Werror)
+if(NOT FLATSAT_PLATFORM STREQUAL "pico")
+    add_compile_options(${FLATSAT_WARNINGS})
+endif()
 
 # The hil_link framing library is shared with the HIL bridge in the NOS3 fork
 set(HIL_PROTOCOL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../nos3/components/hil_bridge/protocol)
@@ -47,6 +58,18 @@ add_library(adcs_law STATIC obc/adcs/adcs_law.c)
 target_include_directories(adcs_law PUBLIC obc/adcs)
 target_link_libraries(adcs_law PUBLIC m)
 
+set(OBC_SOURCES
+    obc/obc_main.c
+    obc/obc_cmd.c
+    obc/obc_events.c
+    obc/obc_mode.c
+    obc/obc_sensors.c
+    obc/obc_tlm.c
+    obc/obc_can.c
+    obc/obc_adcs.c
+    obc/obc_comms.c
+)
+
 if(FLATSAT_PLATFORM STREQUAL "linux")
     add_library(fs_hal STATIC hal/linux/fs_hal_linux.c hal/linux/sil_harness.c)
     target_include_directories(fs_hal PUBLIC common/include hal/linux)
@@ -78,17 +101,7 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     add_test(NAME test_adcs COMMAND test_adcs)
 
     # OBC flight software, software-in-the-loop build
-    add_executable(obc
-        obc/obc_main.c
-        obc/obc_cmd.c
-        obc/obc_events.c
-        obc/obc_mode.c
-        obc/obc_sensors.c
-        obc/obc_tlm.c
-        obc/obc_can.c
-        obc/obc_adcs.c
-        obc/obc_comms.c
-    )
+    add_executable(obc ${OBC_SOURCES})
     target_include_directories(obc PRIVATE obc)
     target_link_libraries(obc obc_devices adcs_law fs_common fs_hal m)
 
@@ -99,3 +112,22 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     add_executable(test_devices tests/sil/test_devices.c)
     target_link_libraries(test_devices obc_devices fs_common fs_hal m)
 endif()
+
+if(FLATSAT_PLATFORM STREQUAL "pico")
+    foreach(lib fs_common obc_devices adcs_law)
+        target_compile_options(${lib} PRIVATE ${FLATSAT_WARNINGS})
+    endforeach()
+
+    # OBC flight software on the Pico 2: the umbilical is the USB port (hal/pico/fs_hal_pico.c)
+    add_executable(obc ${OBC_SOURCES} hal/pico/fs_hal_pico.c)
+    set_source_files_properties(${OBC_SOURCES} PROPERTIES COMPILE_OPTIONS "${FLATSAT_WARNINGS}")
+    set_source_files_properties(hal/pico/fs_hal_pico.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
+    target_include_directories(obc PRIVATE obc)
+    target_link_libraries(obc obc_devices adcs_law fs_common pico_stdlib hardware_watchdog hardware_uart)
+    # The name the PC shows for the USB device
+    target_compile_definitions(obc PRIVATE "USBD_PRODUCT=\"FlatSat OBC\"" "USBD_MANUFACTURER=\"HITL FlatSat\"")
+    pico_enable_stdio_usb(obc 1)
+    pico_enable_stdio_uart(obc 0)
+    pico_add_extra_outputs(obc) # obc.uf2: drag onto the Pico's USB drive
+endif()
+
