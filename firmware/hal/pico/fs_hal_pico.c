@@ -6,6 +6,7 @@
 **              Setting the port to 1200 baud restarts the Pico in its USB bootloader, for reflashing.
 **   log        UART0 at 115200 baud on GP0 (TX) / GP1 (RX), and a LOG frame on the umbilical while it is up
 **   watchdog   the hardware watchdog; fs_hal_watchdog_kick() must run every WATCHDOG_MS
+**   LED        the on-board LED changes state at every watchdog kick: blinking means the software is running
 **   reset cause  from the watchdog: a timeout, a commanded reboot (marked in a scratch register) or power-on
 **              (power, the RUN pin or the reset button)
 **   CAN        not yet: the MCP2515 driver comes with the CAN boards. Until then the bus reports itself as
@@ -63,6 +64,8 @@ int fs_hal_init(int argc, char **argv)
     }
     watchdog_hw->scratch[0] = 0;
 
+    gpio_init(PICO_DEFAULT_LED_PIN);
+    gpio_set_dir(PICO_DEFAULT_LED_PIN, GPIO_OUT);
     uart_init(LOG_UART, LOG_BAUD);
     gpio_set_function(LOG_UART_TX, GPIO_FUNC_UART);
     gpio_set_function(LOG_UART_RX, GPIO_FUNC_UART);
@@ -156,6 +159,7 @@ void fs_hal_check_power(void)
 void fs_hal_watchdog_kick(void)
 {
     watchdog_update();
+    gpio_xor_mask(1u << PICO_DEFAULT_LED_PIN);
 }
 
 void fs_hal_log(const char *fmt, ...)
