@@ -300,7 +300,7 @@ The EPS node's measurements against the plant's true values, and the physical wh
 |---|---|---|---|
 | TC-13.1 | Rail measurement accuracy | within 2 mA and 10 mV of the true values over four load cases | SYS-05 |
 | TC-13.2 | Wheel steps | within 20 rpm of ±100, ±300 rpm in < 2 s; overshoot < 10 % | SYS-08 |
-| TC-13.3 | Mirroring in SUN_POINT | physical wheel at 1:10 of wheel 0 within 20 rpm | SYS-08 |
+| TC-13.3 | Mirroring in SUN_POINT | converged sun pointing, over 30 s: command at 1:10 of wheel 0 within 2 rpm, physical wheel within 20 rpm of its command | SYS-08 |
 | TC-13.4 | Loss of commands | motor drive removed within 1.5 s of the OBC freezing (on the Pico: of the bridge freezing) | SYS-08 |
 
 ## TC-14

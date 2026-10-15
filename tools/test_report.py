@@ -110,6 +110,36 @@ def positive(x):
     return v if v is not None and v > 0 else float("nan")
 
 
+def orbit_plot(rows, path, title):
+    """TC-14's time series: Sun angle and wheel momentum over the orbit, eclipse shaded. False if there is none."""
+    if not rows:
+        return False
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    t = [num(r["t_s"]) / 60 for r in rows]
+    fig, (a1, a2) = plt.subplots(2, 1, sharex=True, figsize=(9, 6))
+    a1.plot(t, [positive(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
+    a1.set_ylabel("deg")
+    a1.set_yscale("log")
+    a1.legend(loc="upper right")
+    a2.plot(t, [num(r["wheel_momentum_pct"]) for r in rows], color="#8c564b", label="wheel momentum, % of capacity")
+    a2.set_ylabel("%")
+    a2.set_xlabel("time from convergence, min (wall clock: the simulation runs about 10 % slower)")
+    a2.legend(loc="upper right")
+    for ax in (a1, a2):
+        ecl = [r["eclipse_truth"] == "1" for r in rows]
+        for i in range(1, len(rows)):
+            if ecl[i]:
+                ax.axvspan(t[i - 1], t[i], color="#cccccc", alpha=0.5, lw=0)
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path)
+    plt.close(fig)
+    return True
+
+
 # ---- Plots ----
 
 def plots(data, out):
@@ -194,27 +224,8 @@ def plots(data, out):
         plt.close(fig)
         made["TC-13"] = "tc13_wheel.png"
 
-    rows = load_csv(data("sil-orbit.d/orbit.csv"))
-    if rows:
-        t = [num(r["t_s"]) / 60 for r in rows]
-        fig, (a1, a2) = plt.subplots(2, 1, sharex=True, figsize=(9, 6))
-        a1.plot(t, [positive(r["err_truth_deg"]) for r in rows], color="#d62728", label="Sun angle (42 truth)")
-        a1.set_ylabel("deg")
-        a1.set_yscale("log")
-        a1.legend(loc="upper right")
-        a2.plot(t, [num(r["wheel_momentum_pct"]) for r in rows], color="#8c564b", label="wheel momentum, % of capacity")
-        a2.set_ylabel("%")
-        a2.set_xlabel("time from convergence, min (wall clock: the simulation runs about 10 % slower)")
-        a2.legend(loc="upper right")
-        for ax in (a1, a2):
-            ecl = [r["eclipse_truth"] == "1" for r in rows]
-            for i in range(1, len(rows)):
-                if ecl[i]:
-                    ax.axvspan(t[i - 1], t[i], color="#cccccc", alpha=0.5, lw=0)
-        fig.suptitle("TC-14: one orbit without intervention (grey: eclipse, from 42's geometry)")
-        fig.tight_layout()
-        fig.savefig(out / "tc14_orbit.png")
-        plt.close(fig)
+    if orbit_plot(load_csv(data("sil-orbit.d/orbit.csv")), out / "tc14_orbit.png",
+                  "TC-14: one orbit without intervention (grey: eclipse, from 42's geometry)"):
         made["TC-14"] = "tc14_orbit.png"
     return made
 
@@ -248,7 +259,7 @@ def software(sm):
             f"NOS3 fork `{sm.get('nos3_commit', '?')}`")
 
 
-def hil_section(v, sil_results, hil_runs, doc):
+def hil_section(v, sil_results, hil_runs, doc, out):
     """The campaign with the OBC on the Pico (and its retests): verdicts, stages, every step next to its SIL result."""
     hil = hil_runs[0]
     sm = summary_of(hil)
@@ -281,6 +292,10 @@ def hil_section(v, sil_results, hil_runs, doc):
             if st["name"] in retested else ""
         o.append(f"| `{st['name']}` | {ICON.get(st['result'], st['result'])}{again} | {st['seconds'] // 60} min "
                  f"{st['seconds'] % 60} s |")
+    orbit = next((r / "sil-orbit.d/orbit.csv" for r in reversed(hil_runs) if (r / "sil-orbit.d/orbit.csv").exists()), None)
+    if orbit is not None and orbit_plot(load_csv(orbit), out / "tc14_orbit_pico.png",
+                                        "TC-14 on the Pico: one orbit, the OBC on its target (grey: eclipse)"):
+        o += ["", "![TC-14 on the Pico](tc14_orbit_pico.png)"]
     o += ["", "Every step that ran in both, side by side:", "",
           "| Step | SIL | HIL (Pico) | Measured on the PC | Measured on the Pico |", "|---|---|---|---|---|"]
     for st in steps:
@@ -313,7 +328,9 @@ def timing_section(runs, number, doc):
     o = ["", f"## {number}. Timing budget", "",
          "From the OBC's own once-a-minute timing reports, over every stage of the campaign. Busy time includes "
          "waiting for device replies: the scheduler is cooperative, so a task that waits holds the others "
-         f"([NCR-018]({doc('docs/ncr/NCR_LOG.md')}#ncr-018)). Times are mean / longest.", "",
+         f"([NCR-018]({doc('docs/ncr/NCR_LOG.md')}#ncr-018)). Times are mean / longest. The longest runs include the "
+         "fault-injection tests, which freeze a simulator, take the CAN bus down, or freeze the OBC process (TC-13.4 on "
+         "the PC, for 3 s) or its bridge (on the Pico): they are worst cases under faults, not in normal operation.", "",
          f"| | {head} |", "|---|" + "---|" * len(runs)]
 
     def row(label, f):
@@ -419,7 +436,7 @@ def report(runs, out, hil=None):
             o.append(f"| {st['id']} {st['title']} | {st['criterion']} | {ICON[res]} | {text.replace('|', '/')} |")
 
     if hil:
-        o += hil_section(v, results, hil, doc)
+        o += hil_section(v, results, hil, doc, out)
     o += timing_section([("PC (SIL)", read_timing(r)) for r in runs[:1]] +
                         ([("Pico 2 (HIL)", read_timing(hil[0]))] if hil else []),
                         "5" if hil else "4", doc)

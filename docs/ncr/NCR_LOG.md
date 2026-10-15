@@ -25,6 +25,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-019](#ncr-019) | 2026-10-14 | The COSMOS test commands the Pico before its restart | Minor | Closed |
 | [NCR-020](#ncr-020) | 2026-10-15 | After a restart, the actuators keep their last commands and turn the spacecraft | Major | Closed |
 | [NCR-021](#ncr-021) | 2026-10-15 | A leftover USB helper grabs the Pico when it restarts into its bootloader | Minor | Closed |
+| [NCR-022](#ncr-022) | 2026-10-15 | Two test steps fail depending on timing the procedure doesn't control | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -589,4 +590,25 @@ Three causes, in order of size on the Pico:
 **Verification.** `tests/run_all.sh --pico restart`: the Pico was restarted in its bootloader and flashed with no hand on it, and the run left no keeper or helper behind. A keep-attached run alongside a process that merely mentions the helper's name stopped the keeper and the helper and left that process alone. (The stop's patterns are anchored to the start of the command line: an unanchored first version also stopped the shell that ran it.)
 
 The Pico itself had to move to another USB port: Windows kept the first one in its error state, even with BOOTSEL held, for the rest of the session.
+
+---
+
+## NCR-022
+
+**Two test steps fail depending on timing the procedure doesn't control**
+
+| | |
+|---|---|
+| Found by | Campaign `run-20261015-150753` (`tests/run_all.sh all`, PC): TC-04.9 and TC-13.3 failed; both had passed in every earlier campaign, and on the Pico the same day |
+| Item | Test programs: `firmware/tests/sil/test_devices.c` (TC-04) and `tests/system/test_hardware_twin.py` (TC-13) |
+| Severity | Minor: no flight software defect; two steps without a valid result |
+| Status | Closed |
+
+**TC-04.9: "momentum read failed on wheel 1 (-2)".** The driver test sent its first request on each wheel's UART without declaring the bus first, so the bridge opened `usart_3` on that request: 46 ms of the driver's 100 ms timeout. The OBC declares every bus at start-up (`dev_open_all`, `obc_sensors_init`) and never meets this case. **Correction:** the test declares the buses first, as the OBC does.
+
+**TC-13.3: "command within 7.6 rpm of wheel 0 / 10" (limit 2 rpm).** The step began 30 s after `SUN_POINT` started, assuming the slew was over. This time sun pointing hadn't converged (no "converged" event) and wheel 0 was still accelerating (−124 rpm, against about −376 rpm when steady). A wheel speed and the command derived from it reach the telemetry packet up to 200 ms apart, so in a slew they differ. Convergence took the usual time in this campaign's other tests (TC-08.3: 73 s, against 72–83 s in every campaign since 6 October), so this isn't a regression: the slew's length depends on the attitude at the end of the detumble. **Correction:** the step waits for convergence. The script also checked a 2 rpm limit on the command that the procedure didn't state; the procedure now states both limits.
+
+**Verification.** Retest `run-20261015-195213` (`tests/run_all.sh firmware devices hardware`): TC-04 14 of 14; TC-13 4 of 4, the command within 0.5 rpm of wheel 0 / 10.
+
+**Lesson.** A step that depends on something it doesn't wait for (a bus being open, a slew being over) passes until the day it doesn't. A step should state, and wait for, the state it measures.
 

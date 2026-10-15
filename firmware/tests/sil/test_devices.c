@@ -494,11 +494,15 @@ int main(int argc, char **argv)
     truth_open();
 
     printf("---- OBC device drivers vs NOS3 simulators and 42 truth ----\n");
+    /* Open every device bus first, as the OBC does at start-up (obc_sensors_init): a bus the bridge opens on
+    ** first use spends ~50 ms of that request's 100 ms timeout opening (NCR-022) */
+    dev_open_all();
     test_link_and_time();
     if (!fs_umb_link_up())
     {
         return 1;
     }
+    service(500); /* the bridge opens the declared buses as the link comes up */
     {
         uint64_t deadline = fs_hal_time_us() + 10000000u;
         while (!truth.valid && fs_hal_time_us() < deadline)

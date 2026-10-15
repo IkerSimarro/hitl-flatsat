@@ -78,7 +78,11 @@ def main():
     if wait_mode(g, "SUN_POINT", 300.0) is None:
         check(False, "[TC-13.3] physical wheel mirrors wheel 0", "never reached SUN_POINT")
         return 1
-    g.pump(30.0)  # past the first wheel transients of the slew
+    # Steady sun pointing: in a slew wheel 0 changes speed quickly, and the speed and the command in one packet are
+    # sampled up to 200 ms apart (NCR-022). The slew's length depends on the attitude at the end of the detumble.
+    if g.wait_for("ADCS_STATE", 300.0, lambda f: f["CONVERGED"] == 1) is None:
+        check(False, "[TC-13.3] physical wheel mirrors wheel 0", "sun pointing never converged")
+        return 1
     worst_cmd, worst_true, end = 0.0, 0.0, time.monotonic() + 30.0
     while time.monotonic() < end:
         st = g.wait_for("ADCS_STATE", 2.0)

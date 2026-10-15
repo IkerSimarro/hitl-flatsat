@@ -302,7 +302,7 @@ test_cases:
     steps:
       - {id: TC-13.1, title: "Rail measurement accuracy", criterion: "within 2 mA and 10 mV of the true values over four load cases", reqs: [SYS-05]}
       - {id: TC-13.2, title: "Wheel steps", criterion: "within 20 rpm of ±100, ±300 rpm in < 2 s; overshoot < 10 %", reqs: [SYS-08]}
-      - {id: TC-13.3, title: "Mirroring in SUN_POINT", criterion: "physical wheel at 1:10 of wheel 0 within 20 rpm", reqs: [SYS-08]}
+      - {id: TC-13.3, title: "Mirroring in SUN_POINT", criterion: "converged sun pointing, over 30 s: command at 1:10 of wheel 0 within 2 rpm, physical wheel within 20 rpm of its command", reqs: [SYS-08]}
       - {id: TC-13.4, title: "Loss of commands", criterion: "motor drive removed within 1.5 s of the OBC freezing (on the Pico: of the bridge freezing)", reqs: [SYS-08]}
 
   - id: TC-14
