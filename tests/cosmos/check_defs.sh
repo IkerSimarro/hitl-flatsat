@@ -6,7 +6,8 @@
 set -eo pipefail
 ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/../.." &> /dev/null && pwd )
 WORK=$(mktemp -d)
-trap 'rm -rf $WORK' EXIT
+# COSMOS runs as root in its container, so a non-root user (a CI runner) can't remove all it leaves: not an error
+trap 'rm -rf "$WORK" 2> /dev/null || true' EXIT
 
 # Encode sample packets with the Python codec, recording the values COSMOS should read back
 python3 - > $WORK/packets.txt <<'PY'

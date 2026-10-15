@@ -13,10 +13,10 @@ jobs:
     name: Interfaces and documents (TC-01)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true # the NOS3 fork: generated COSMOS definitions and the HIL link protocol
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install pyyaml==6.0.2
@@ -35,7 +35,7 @@ jobs:
     name: Firmware unit tests (TC-02)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
       - name: Build (Linux) and run the unit tests, in the NOS3 build image
@@ -45,7 +45,7 @@ jobs:
     name: Pico 2 firmware
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: true
       - name: Build image (Arm compiler, Pico SDK 2.3.1, picotool)
@@ -54,7 +54,7 @@ jobs:
         run: tools/pico/build.sh
       - name: Flash and RAM used
         run: docker run --rm -v "$PWD:$PWD" -w "$PWD" flatsat-pico arm-none-eabi-size firmware/build-pico/obc.elf
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: obc-pico2
           path: firmware/build-pico/obc.uf2
