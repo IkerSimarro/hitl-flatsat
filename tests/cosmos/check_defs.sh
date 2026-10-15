@@ -6,8 +6,9 @@
 set -eo pipefail
 ROOT=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )/../.." &> /dev/null && pwd )
 WORK=$(mktemp -d)
-# COSMOS runs as root in its container, so a non-root user (a CI runner) can't remove all it leaves: not an error
-trap 'rm -rf "$WORK" 2> /dev/null || true' EXIT
+# COSMOS runs as root in its container, so a non-root user (a CI runner) can't remove all it leaves. That doesn't
+# affect the result, which is decided above, so it is reported, not counted as a failure
+trap 'rm -rf "$WORK" 2> /dev/null || echo "note: some temporary files COSMOS created as root are left in $WORK"' EXIT
 
 # Encode sample packets with the Python codec, recording the values COSMOS should read back
 python3 - > $WORK/packets.txt <<'PY'
