@@ -33,10 +33,14 @@ requirements:
     text: >-
       A sensor or actuator that delivers no valid data for 2.5 s shall be declared failed with an event. If the
       current attitude mode depends on it, the spacecraft shall enter SAFE within 10 s of the failure. Shorter
-      gaps shall not be declared faults, and a device that recovers shall be reported recovered.
+      gaps shall not be declared faults, and a device that recovers shall be reported recovered. After a restart,
+      the OBC shall command every attitude actuator off as soon as it can reach them, and stay in SAFE until
+      commanded, unless it detects a tumble.
     rationale: >-
       An attitude law running on a dead sensor or actuator can spin the spacecraft up. A fault response that
-      trips on every late reply makes the spacecraft unusable.
+      trips on every late reply makes the spacecraft unusable. Actuators left as they were before a restart turn
+      the spacecraft with no one in control (NCR-020); after an unexplained restart, a person decides what it
+      does next rather than the software resuming on its own (design decision, 15 October 2026).
     methods: [T]
 
   - id: SYS-04
@@ -349,3 +353,18 @@ test_cases:
       - {id: TC-16.3, title: "Detumble and hand-over", criterion: "DETUMBLE within 60 s, SUN_POINT within 400 s of the restart", reqs: [SYS-01]}
       - {id: TC-16.4, title: "Sun pointing converges", criterion: "converged, Sun angle < 5 deg by 42's truth", reqs: [SYS-02]}
       - {id: TC-16.5, title: "A minute of sun pointing", criterion: "SUN_POINT throughout, Sun angle < 2 deg, no event of WARNING severity or above", reqs: [SYS-02, SYS-03]}
+
+  - id: TC-17
+    title: Restart in flight
+    stage: sil:restart
+    script: tests/system/test_restart.py
+    config: SIL with NOS3's deployment tip-off; on the Pico (tests/run_all.sh --pico) the restart is the Pico's own
+    objective: >-
+      The OBC restarts in the middle of sun pointing, as after a power glitch or a watchdog reset. It must leave no
+      actuator running, wait in SAFE for the ground, and point at the Sun again when commanded. The automated form
+      of the manual test that found NCR-020: pulling the Pico's USB cable in flight.
+    steps:
+      - {id: TC-17.1, title: "Restart reported", criterion: "telemetry back within 20 s of OBC_REBOOT in SUN_POINT, reset cause COMMAND, mode SAFE", reqs: [SYS-03, SYS-06]}
+      - {id: TC-17.2, title: "Actuators off after the restart", criterion: "all three wheels and all three magnetorquers commanded to zero within 10 s of the restarted OBC's first telemetry", reqs: [SYS-03]}
+      - {id: TC-17.3, title: "Waits in SAFE", criterion: "SAFE for 60 s with no command, rate below the tumble threshold", reqs: [SYS-03]}
+      - {id: TC-17.4, title: "Sun pointing on command", criterion: "OBC_SET_MODE SUN_POINT: converged, Sun angle < 5 deg by 42's truth within 5 min", reqs: [SYS-02]}

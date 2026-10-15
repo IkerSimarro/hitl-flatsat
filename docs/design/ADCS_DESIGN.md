@@ -131,6 +131,10 @@ Loops are prevented by the guards. For example, after a magnetometer failure `SA
 
 Every mode change stops all actuators and resets the control law state, so each mode starts from a clean, known state.
 
+**After a restart** (power loss, watchdog, or a commanded reboot) the OBC starts in `SAFE`. It commands every actuator off as soon as it can reach the wheels: NOS3's wheel and magnetorquer simulators, like actuator electronics that don't reset with the OBC, keep applying their last command, and a restart isn't a mode change ([NCR-020](../ncr/NCR_LOG.md#ncr-020)). It then waits in `SAFE` for the ground. It doesn't return to sun pointing by itself, unless it finds the spacecraft tumbling (the `SAFE` → `DETUMBLE` transition above).
+
+*Design decision, 15 October 2026.* Three options were considered after a manual test in which the Pico lost power in flight: wait in `SAFE` for the ground; return to sun pointing at once; or return to it after a minute in `SAFE` if all sensors are healthy. Waiting was chosen: "making it go back to working without figuring out what broke it seems irresponsible". After an unexplained restart, a person decides what the spacecraft does next. The cost is that the spacecraft can drift off the Sun until the next contact; a mission with tight power margins would revisit this. Verified by TC-17; requirement SYS-03.
+
 ## 6. Verification
 
 | Level | Test | What it shows |

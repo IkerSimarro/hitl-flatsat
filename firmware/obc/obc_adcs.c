@@ -19,6 +19,7 @@
 #define MANUAL_RW_BANDWIDTH 1.0f /* 1/s: TEST mode wheel speed loop */
 
 static adcs_bdot_t bdot;
+static int         actuators_reset; /* commanded off since start-up (NCR-020) */
 static uint64_t    last_mag_us; /* last good magnetometer sample used by B-dot */
 
 /* When each automatic transition's condition became true (0 = not true) */
@@ -161,6 +162,15 @@ static void manual_wheels(void)
 void obc_adcs_step(void)
 {
     uint64_t now = fs_hal_time_us();
+
+    /* After a restart the actuators still apply what they were last commanded, before the restart, and would
+    ** keep turning the spacecraft: switch them off as soon as they can be reached (NCR-020). Every mode change
+    ** does the same (obc_adcs_mode_changed), but a restart isn't a mode change. */
+    if (!actuators_reset && sensors_ok(OBC_VALID_RW))
+    {
+        stop_actuators();
+        actuators_reset = 1;
+    }
 
     /* The sensors were read 50 ms earlier by the adcs_sense task (obc_main.c) */
     obc.adcs.sun_valid =
@@ -320,5 +330,6 @@ void obc_adcs_init(void)
     obc.sun_kd              = ADCS_SUN_KD;
     adcs_bdot_reset(&bdot);
     reset_timers();
-    last_mag_us = 0;
+    last_mag_us     = 0;
+    actuators_reset = 0;
 }

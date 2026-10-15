@@ -48,6 +48,7 @@ fi
 
 cleanup()
 {
+    [ -n "$PICO" ] && "$ROOT/tools/pico/attach.sh" --stop
     echo "[launch] stopping..."
     docker rm -f "$SIL_NAME" "$COSMOS_NAME" > /dev/null 2>&1
     docker network rm "$NET" > /dev/null 2>&1

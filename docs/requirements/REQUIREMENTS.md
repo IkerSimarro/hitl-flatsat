@@ -17,11 +17,11 @@ Verification methods: T test, A analysis, I inspection, D demonstration.
 | ID | Requirement | Methods | Verified by |
 |---|---|---|---|
 | [SYS-01](#sys-01) | Autonomous detumble | A, T | TC-02, TC-08, TC-15, TC-16 |
-| [SYS-02](#sys-02) | Sun pointing | A, T | TC-02, TC-08, TC-14, TC-15, TC-16 |
-| [SYS-03](#sys-03) | Sensor and actuator fault response | T | TC-07, TC-08, TC-12, TC-14, TC-16 |
+| [SYS-02](#sys-02) | Sun pointing | A, T | TC-02, TC-08, TC-14, TC-15, TC-16, TC-17 |
+| [SYS-03](#sys-03) | Sensor and actuator fault response | T | TC-07, TC-08, TC-12, TC-14, TC-16, TC-17 |
 | [SYS-04](#sys-04) | Subsystem node and bus health | T | TC-02, TC-06, TC-12, TC-16 |
 | [SYS-05](#sys-05) | Power management | T | TC-06, TC-08, TC-13, TC-14 |
-| [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14, TC-16 |
+| [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14, TC-16, TC-17 |
 | [SYS-07](#sys-07) | RF link and ground segment | T, D | TC-01, TC-02, TC-09, TC-10, TC-11 |
 | [SYS-08](#sys-08) | Physical reaction wheel | A, T | TC-02, TC-06, TC-12, TC-13 |
 
@@ -55,14 +55,15 @@ In sunlight, the spacecraft shall bring its +X axis within 5 deg of the Sun with
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.1, 14.2, 14.3, 14.4
 - [TC-15](../test/TEST_PROCEDURES.md#tc-15) Comparison with NASA's reference ADCS *(blocked)*: steps 15.2
 - [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.4, 16.5
+- [TC-17](../test/TEST_PROCEDURES.md#tc-17) Restart in flight: steps 17.4
 
 ## SYS-03
 
 **Sensor and actuator fault response**
 
-A sensor or actuator that delivers no valid data for 2.5 s shall be declared failed with an event. If the current attitude mode depends on it, the spacecraft shall enter SAFE within 10 s of the failure. Shorter gaps shall not be declared faults, and a device that recovers shall be reported recovered.
+A sensor or actuator that delivers no valid data for 2.5 s shall be declared failed with an event. If the current attitude mode depends on it, the spacecraft shall enter SAFE within 10 s of the failure. Shorter gaps shall not be declared faults, and a device that recovers shall be reported recovered. After a restart, the OBC shall command every attitude actuator off as soon as it can reach them, and stay in SAFE until commanded, unless it detects a tumble.
 
-*Rationale.* An attitude law running on a dead sensor or actuator can spin the spacecraft up. A fault response that trips on every late reply makes the spacecraft unusable.
+*Rationale.* An attitude law running on a dead sensor or actuator can spin the spacecraft up. A fault response that trips on every late reply makes the spacecraft unusable. Actuators left as they were before a restart turn the spacecraft with no one in control (NCR-020); after an unexplained restart, a person decides what it does next rather than the software resuming on its own (design decision, 15 October 2026).
 
 *Verification.* Test:
 
@@ -71,6 +72,7 @@ A sensor or actuator that delivers no valid data for 2.5 s shall be declared fai
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.1, 12.2
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.5
 - [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.5
+- [TC-17](../test/TEST_PROCEDURES.md#tc-17) Restart in flight: steps 17.1, 17.2, 17.3
 
 ## SYS-04
 
@@ -120,6 +122,7 @@ Every telecommand shall be validated (checksum, length, function code, argument 
 - [TC-11](../test/TEST_PROCEDURES.md#tc-11) Ground segment end to end (COSMOS): steps 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7
 - [TC-14](../test/TEST_PROCEDURES.md#tc-14) One-orbit endurance: steps 14.5
 - [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.1
+- [TC-17](../test/TEST_PROCEDURES.md#tc-17) Restart in flight: steps 17.1
 
 ## SYS-07
 

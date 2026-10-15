@@ -57,6 +57,7 @@ STAGES=(
     "sil:rf-pass      SIL_GS_ARGS='--lat 37.9402 --lon -75.4664 --alt 10 --seed 1' sil/sil.sh '$NODES python3 tests/system/test_rf_pass.py'"
     "sil:failures     sil/sil.sh '$NODES python3 tests/system/test_failures.py'"
     "sil:hardware-twin sil/sil.sh '$NODES python3 tests/system/test_hardware_twin.py'"
+    "sil:restart      sil/sil.sh '$NODES python3 tests/system/test_restart.py'"
     "sil:reference    D=\$SIL_LOG_DIR; SIL_INIT_RATES='2 -3 4' SIL_LOG_DIR=\$D/flatsat sil/sil.sh '$NODES python3 tests/system/test_reference_adcs.py --fsw flatsat'; SIL_INIT_RATES='2 -3 4' SIL_NO_BRIDGE=1 SIL_DOCKER_ARGS='--sysctl fs.mqueue.msg_max=10000 --ulimit rtprio=99 --cap-add=sys_nice' SIL_LOG_DIR=\$D/cfs sil/sil.sh 'python3 tests/system/test_reference_adcs.py --fsw cfs'; python3 tests/system/test_reference_adcs.py --compare \$D"
     "sil:orbit        sil/sil.sh '$NODES python3 tests/system/test_orbit.py'"
     "e2e:cosmos       tests/cosmos/test_cosmos_e2e.sh"
@@ -91,7 +92,7 @@ if [ $CONFIG = hil-pico ]; then
     tools/pico/attach.sh --keep &
     KEEPER=$!
     export PICO_KEEPER=1
-    trap 'kill $KEEPER 2> /dev/null' EXIT
+    trap 'kill $KEEPER 2> /dev/null; tools/pico/attach.sh --stop' EXIT
 fi
 
 declare -a NAMES RESULTS TIMES

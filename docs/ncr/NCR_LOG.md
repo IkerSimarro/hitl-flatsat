@@ -23,6 +23,8 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-017](#ncr-017) | 2026-10-14 | On the Pico, a zero wheel torque is sent as "nan" and destroys the simulation | Critical | Closed |
 | [NCR-018](#ncr-018) | 2026-10-14 | On the Pico, commands wait up to 200 ms: the OBC blocks on its own input and output | Major | Closed |
 | [NCR-019](#ncr-019) | 2026-10-14 | The COSMOS test commands the Pico before its restart | Minor | Closed |
+| [NCR-020](#ncr-020) | 2026-10-15 | After a restart, the actuators keep their last commands and turn the spacecraft | Major | Closed |
+| [NCR-021](#ncr-021) | 2026-10-15 | A leftover USB helper grabs the Pico when it restarts into its bootloader | Minor | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -539,3 +541,50 @@ Three causes, in order of size on the Pico:
 **Correction.** `sil/start_obc.sh` prints `[obc] ready` once the OBC is up, and the COSMOS test waits for it as well as for the simulation.
 
 **Verification.** `tests/run_all.sh --pico cosmos`: 11 of 11 on the Pico; `tests/run_all.sh cosmos`: passed on the PC.
+
+---
+
+## NCR-020
+
+**After a restart, the actuators keep their last commands and turn the spacecraft**
+
+| | |
+|---|---|
+| Found by | A manual test on the Pico, 15 October: in sun pointing, its USB cable (its only power) was pulled and plugged back in |
+| Item | OBC attitude control (`firmware/obc/obc_adcs.c`) |
+| Severity | Major: after any restart, the spacecraft is turned by actuators no one is commanding |
+| Status | Closed |
+
+**Observation.** The prediction written before the test was that, once powered again, the OBC would point at the Sun again. It came back in `SAFE`, as designed, and stayed there; but the pointing error in COSMOS kept growing.
+
+**Root cause.** Every mode change commands all actuators off, but a restart isn't a mode change: the OBC starts in `SAFE` without passing through a transition. NOS3's wheel and magnetorquer simulators keep applying their last command, as actuator electronics that don't reset with the OBC would, so the torques and dipoles of the last sun-pointing step before the power loss stayed on.
+
+**Correction.** The first ADCS step after start-up in which the wheels answer commands every actuator off.
+
+**Verification.** The manual test became TC-17 (restart in sun pointing, `tests/system/test_restart.py`). On the software before the correction it failed as expected: all six actuators still applied their pre-restart commands, and in 60 s of `SAFE` the body rate grew to 0.48°/s. After the correction it passed 4 of 4 on the PC: all six commanded to zero, `SAFE` held for 60 s, sun pointing on command. On the Pico: VERIFY_PICO.
+
+**Investigation notes.**
+- The magnetorquer check first failed after the correction too: NOS3's torquer simulator logged only one of the three zero commands. Sending it a burst of harmless commands showed that all three had arrived; its log is written in batches, so once the commands stop it lags the real state. TC-17 reads the magnetorquer commands where they leave the OBC instead, from the bridge's log, which now records each duty.
+- The test's expected behaviour after a restart (wait in `SAFE`) is a design decision taken after this test; see the [ADCS design note](../design/ADCS_DESIGN.md#5-mode-transitions) and SYS-03.
+
+**Lesson.** The test was written down with its expected result before it ran, and the prediction was wrong: that is how the defect showed. Exploratory tests by hand find what scripted tests weren't written to look for; once found, the case becomes a scripted test.
+
+---
+
+## NCR-021
+
+**A leftover USB helper grabs the Pico when it restarts into its bootloader**
+
+| | |
+|---|---|
+| Found by | `tests/run_all.sh --pico restart`, 15 October: flashing failed, "no RP2350 drive", and Windows then showed the Pico as "Unknown USB Device (Device Descriptor Request Failed)" |
+| Item | Test environment: `tools/pico/attach.sh`, `sil/launch.sh`, `tests/run_all.sh` |
+| Severity | Minor: no flight software defect; the Pico needed unplugging to recover |
+| Status | Closed |
+
+**Root cause.** Keeping the Pico attached to WSL across its restarts uses usbipd's auto-attach, which runs a helper inside WSL (`usbip-auto-attach`). Stopping the launcher with Ctrl-C killed the Windows side but not that helper. It went on watching the Pico's USB port, and when the Pico restarted into its bootloader to be flashed, it grabbed the port, leaving the bootloader half attached.
+
+**Correction.** `tools/pico/attach.sh --stop` stops every keeper and the helper; `attach.sh`, the launcher and the campaign call it whenever they finish, however they finish.
+
+**Verification.** VERIFY_NCR021
+
