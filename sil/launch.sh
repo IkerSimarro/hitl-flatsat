@@ -5,7 +5,8 @@
 #   sil/launch.sh             42 3D view + COSMOS ground station GUI + simulators + OBC + bridge
 #   sil/launch.sh --headless  the same without windows (COSMOS server only)
 #   sil/launch.sh --pico      the OBC is the Raspberry Pi Pico on USB (/dev/ttyACM0, or $PICO_DEV), attached
-#                             to WSL with usbipd; no CAN nodes (they need the CAN boards). Combines with --headless
+#                             to WSL with usbipd and restarted first; the CAN nodes reach it over its umbilical
+#                             until the CAN boards are fitted. Combines with --headless
 #
 # Otherwise the OBC runs as a Linux process with its umbilical on a pty; everything else is NOS3. Ctrl-C stops
 # everything. Before the first run: build NOS3 (make prep, config, all, in nos3/), run
@@ -80,7 +81,11 @@ echo "[launch] logs in $SIL_LOG_DIR"
 if [ -n "$PICO" ]; then
     # The Pico's log lines arrive over the umbilical; show them, and the link coming and going
     echo "[launch] OBC: the Pico on $PICO"
-    SPACE='tail -F $SIL_LOG_DIR/bridge.log 2> /dev/null | grep --line-buffered -E "MCU: |serial device|MCU link"'
+    # The CAN nodes run here, their bus carried to the Pico over its umbilical; the Pico is restarted first so
+    # every launch starts fresh. Its log lines arrive over the umbilical: show them, and the link coming and going
+    SPACE='sil/start_nodes.sh && sil/start_obc.sh && tail -n +1 -F $SIL_LOG_DIR/bridge.log 2> /dev/null |
+           grep --line-buffered -E "MCU: |serial device|MCU link" |
+           grep --line-buffered -v -E "task timing|round trips|umbilical echo|commands: |overruns"'
 else
     SPACE='sil/start_nodes.sh && firmware/build/obc --umb-pty $SIL_UMB_PTY 2>&1 | tee $SIL_LOG_DIR/obc.log'
 fi
@@ -88,5 +93,5 @@ fi
 KEEP_ATTACHED=""
 [ -n "$PICO" ] && KEEP_ATTACHED="$ROOT/tools/pico/attach.sh --"
 SIL_NETWORK=$NET SIL_CONTAINER_NAME=$SIL_NAME SIL_GRAPHICS=$((1 - HEADLESS)) SIL_DOCKER_ARGS="$X11_ARGS" SIL_TTY=0 \
-    SIL_UMB_DEV=$PICO $KEEP_ATTACHED "$ROOT/sil/sil.sh" "$SPACE" &
+    SIL_UMB_DEV=$PICO SIL_UMB_CAN=${PICO:+vcan0} $KEEP_ATTACHED "$ROOT/sil/sil.sh" "$SPACE" &
 wait $!
