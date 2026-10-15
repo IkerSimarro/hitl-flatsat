@@ -561,7 +561,7 @@ Three causes, in order of size on the Pico:
 
 **Correction.** The first ADCS step after start-up in which the wheels answer commands every actuator off.
 
-**Verification.** The manual test became TC-17 (restart in sun pointing, `tests/system/test_restart.py`). On the software before the correction it failed as expected: all six actuators still applied their pre-restart commands, and in 60 s of `SAFE` the body rate grew to 0.48°/s. After the correction it passed 4 of 4 on the PC: all six commanded to zero, `SAFE` held for 60 s, sun pointing on command. On the Pico: VERIFY_PICO.
+**Verification.** The manual test became TC-17 (restart in sun pointing, `tests/system/test_restart.py`). On the software before the correction it failed as expected: all six actuators still applied their pre-restart commands, and in 60 s of `SAFE` the body rate grew to 0.48°/s. After the correction it passed 4 of 4 on the PC: all six commanded to zero, `SAFE` held for 60 s, sun pointing on command. On the Pico (`tests/run_all.sh --pico restart`, run `run-20261015-143350`): 4 of 4, with all six actuators commanded to zero 2.3 s after the Pico was back.
 
 **Investigation notes.**
 - The magnetorquer check first failed after the correction too: NOS3's torquer simulator logged only one of the three zero commands. Sending it a burst of harmless commands showed that all three had arrived; its log is written in batches, so once the commands stop it lags the real state. TC-17 reads the magnetorquer commands where they leave the OBC instead, from the bridge's log, which now records each duty.
@@ -586,5 +586,7 @@ Three causes, in order of size on the Pico:
 
 **Correction.** `tools/pico/attach.sh --stop` stops every keeper and the helper; `attach.sh`, the launcher and the campaign call it whenever they finish, however they finish.
 
-**Verification.** VERIFY_NCR021
+**Verification.** `tests/run_all.sh --pico restart`: the Pico was restarted in its bootloader and flashed with no hand on it, and the run left no keeper or helper behind. A keep-attached run alongside a process that merely mentions the helper's name stopped the keeper and the helper and left that process alone. (The stop's patterns are anchored to the start of the command line: an unanchored first version also stopped the shell that ran it.)
+
+The Pico itself had to move to another USB port: Windows kept the first one in its error state, even with BOOTSEL held, for the rest of the session.
 

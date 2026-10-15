@@ -20,8 +20,10 @@ ID=2e8a:0009
 
 stop_keeping()
 {
-    pkill -f "usbipd.exe attach --wsl --hardware-id $ID --auto-attach" 2> /dev/null
-    pkill -f "usbip-auto-attach" 2> /dev/null
+    # Anchored to the start of the command line, so nothing that merely mentions these names is matched
+    # (a Windows program run from WSL shows as "/init <path> <path> <arguments>")
+    pkill -f "^/init $USBIPD $USBIPD attach --wsl --hardware-id $ID --auto-attach" 2> /dev/null
+    pkill -f "^[^ ]*usbip-auto-attach " 2> /dev/null
     return 0
 }
 if [ "${1:-}" = "--stop" ]; then
