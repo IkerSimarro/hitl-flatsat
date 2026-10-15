@@ -1,0 +1,60 @@
+# Continuous integration: on every push and pull request, the checks that need no simulator. The system tests
+# (software- and hardware-in-the-loop) run on the development machine with tests/run_all.sh: they need NOS3, 42
+# and, for the hardware stages, a Pico on USB.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  interfaces:
+    name: Interfaces and documents (TC-01)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true # the NOS3 fork: generated COSMOS definitions and the HIL link protocol
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml==6.0.2
+      - name: Generated interface code up to date (TC-01.1)
+        run: python3 tools/icd_gen.py --check
+      - name: Requirements and test procedures up to date
+        run: python3 tools/test_docs.py --check
+      - name: Codec and RF unit tests (TC-01.2)
+        run: python3 -m unittest discover -s tests/unit
+      - name: COSMOS screens match the definitions (TC-01.4)
+        run: python3 tests/cosmos/check_screens.py
+      - name: COSMOS definitions match the codec (TC-01.3)
+        run: tests/cosmos/check_defs.sh
+
+  firmware:
+    name: Firmware unit tests (TC-02)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build (Linux) and run the unit tests, in the NOS3 build image
+        run: docker run --rm -v "$PWD:$PWD" -w "$PWD" ivvitc/nos3-64:20260619 firmware/tests/run_unit_tests.sh
+
+  pico:
+    name: Pico 2 firmware
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Build image (Arm compiler, Pico SDK 2.3.1, picotool)
+        run: docker build -t flatsat-pico tools/pico
+      - name: Build the OBC firmware
+        run: tools/pico/build.sh
+      - name: Flash and RAM used
+        run: docker run --rm -v "$PWD:$PWD" -w "$PWD" flatsat-pico arm-none-eabi-size firmware/build-pico/obc.elf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obc-pico2
+          path: firmware/build-pico/obc.uf2

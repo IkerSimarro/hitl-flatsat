@@ -1,5 +1,7 @@
 # HITL FlatSat
 
+[![CI](https://github.com/IkerSimarro/hitl-flatsat/actions/workflows/ci.yml/badge.svg)](https://github.com/IkerSimarro/hitl-flatsat/actions/workflows/ci.yml)
+
 A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, tested against a simulated orbit from NASA's [NOS3](https://github.com/nasa/nos3) small-satellite testbed.
 
 > **Status:** the flight software runs on its first Raspberry Pi Pico 2 against NOS3 (hardware in the loop, October 2026), after a software-in-the-loop campaign against eight system requirements. The CAN, power and radio boards come next.
@@ -106,7 +108,7 @@ tests/run_all.sh all        # also the one-orbit endurance test (about 2½ hours
 tests/run_all.sh orbit      # only the stages whose name contains a word
 ```
 
-Each run leaves its logs, recorded data and report in `tests/logs/run-<time>/`. To publish a run's report: `docker run --rm -v $PWD:$PWD -w $PWD flatsat-report python tools/test_report.py tests/logs/run-<time> --out docs/test/report`.
+Each run leaves its logs, recorded data and report in `tests/logs/run-<time>/`. On GitHub, every push runs the checks that need no simulator ([CI](.github/workflows/ci.yml)): the interface definitions and documents, the firmware unit tests, and the Pico 2 firmware build, whose `obc.uf2` can be downloaded from the run. To publish a run's report: `docker run --rm -v $PWD:$PWD -w $PWD flatsat-report python tools/test_report.py tests/logs/run-<time> --out docs/test/report`.
 
 The main stages one by one (the [test procedures](docs/test/TEST_PROCEDURES.md) give every stage's set-up):
 
