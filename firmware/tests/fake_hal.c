@@ -140,6 +140,26 @@ void fs_hal_sleep_us(uint32_t us)
     fake_now_us += us;
 }
 
+uint64_t fs_hal_idle_us(void)
+{
+    return 0;
+}
+
+int fs_hal_stack_used(void)
+{
+    return -1;
+}
+
+int fs_hal_stack_reserved(void)
+{
+    return -1;
+}
+
+int fs_hal_stack_available(void)
+{
+    return -1;
+}
+
 int fs_hal_umb_write(const uint8_t *data, size_t len)
 {
     size_t i;

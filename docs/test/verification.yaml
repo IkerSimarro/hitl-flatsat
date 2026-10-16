@@ -98,6 +98,18 @@ requirements:
       hardware campaign measures.
     methods: [A, T]
 
+  - id: SYS-09
+    title: Resource margins
+    text: >-
+      On its target, the OBC flight software shall use at most half of the flash and of the RAM, its deepest stack
+      at most three quarters of the stack reserved for it, and on average at most half of the processor's time
+      (at most 80 % in any minute).
+    rationale: >-
+      The drivers for the FlatSat's own boards are still to come and must fit. A stack that outgrows its
+      reservation silently overwrites whatever lies below it (NCR-023). The OBC must keep up with its 5 Hz control
+      cycle and its commands under load.
+    methods: [T]
+
 # Test cases. stage: the tests/run_all.sh stage; script: what it runs; config: how the environment is set up;
 # status: planned or blocked (otherwise automated); informative: excluded from the requirement verdicts;
 # levels: the configurations the test case applies to, sil and/or hil (default both).
@@ -368,3 +380,21 @@ test_cases:
       - {id: TC-17.2, title: "Actuators off after the restart", criterion: "all three wheels and all three magnetorquers commanded to zero within 10 s of the restarted OBC's first telemetry", reqs: [SYS-03]}
       - {id: TC-17.3, title: "Waits in SAFE", criterion: "SAFE for 60 s with no command, rate below the tumble threshold", reqs: [SYS-03]}
       - {id: TC-17.4, title: "Sun pointing on command", criterion: "OBC_SET_MODE SUN_POINT: converged, Sun angle < 5 deg by 42's truth within 5 min", reqs: [SYS-02]}
+
+  - id: TC-18
+    title: Resource budget on the Pico
+    stage: hil:budget
+    script: tests/system/check_budget.py
+    levels: [hil]
+    config: >-
+      The records of a campaign with the OBC on the Pico (tests/run_all.sh --pico): the firmware's section sizes,
+      recorded when it was built, and the OBC's once-a-minute resource reports from every stage
+    objective: >-
+      The flight software's use of the Pico's flash, RAM, stack and processor time, over a whole campaign including
+      its fault-injection tests, against the margins of SYS-09.
+    steps:
+      - {id: TC-18.1, title: "Flash", criterion: "code and initialised data at most 50 % of 4 MB", reqs: [SYS-09]}
+      - {id: TC-18.2, title: "RAM", criterion: "static data at most 50 % of 520 KB", reqs: [SYS-09]}
+      - {id: TC-18.3, title: "Stack", criterion: "deepest use over the campaign at most 75 % of the reserved stack", reqs: [SYS-09]}
+      - {id: TC-18.4, title: "Processor time", criterion: "time not spent sleeping: mean at most 50 %, at most 80 % in any minute", reqs: [SYS-09]}
+

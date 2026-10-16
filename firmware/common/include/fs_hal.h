@@ -71,6 +71,16 @@ void    fs_hal_reboot(void);
 void    fs_hal_check_power(void);
 void    fs_hal_watchdog_kick(void);
 
+/* ---- Resources (the OBC's resource budget) ---- */
+
+/* Time spent in fs_hal_sleep_us() since start-up: the processor's idle time */
+uint64_t fs_hal_idle_us(void);
+/* Deepest stack use since start-up, the bytes reserved for the stack, and the bytes it can reach before meeting
+** other memory; -1 where not measured (Linux, where the operating system manages the stack) */
+int fs_hal_stack_used(void);
+int fs_hal_stack_reserved(void);
+int fs_hal_stack_available(void);
+
 /* Debug log line: stdout on Linux, the umbilical LOG frame or a UART on the Pico */
 void fs_hal_log(const char *fmt, ...) __attribute__((format(printf, 1, 2)));
 

@@ -223,6 +223,89 @@ static void test_sched(void)
     fs_sched_set_boundary(NULL);
 }
 
+/* ---- HIL link framing (encoded and decoded in place, NCR-023) ---- */
+
+static hil_frame_t hl_in, hl_out;
+static uint8_t     hl_wire[HIL_ENCODED_MAX];
+
+/* Encodes hl_in into a buffer of cap bytes, decodes it byte by byte; 1 if the frame comes back unchanged */
+static int hil_round_trip(size_t cap)
+{
+    hil_decoder_t dec;
+    size_t        n = hil_encode(&hl_in, hl_wire, cap);
+    size_t        i;
+    int           frames = 0;
+
+    if (n == 0 || hl_wire[n - 1] != 0x00)
+    {
+        return 0;
+    }
+    for (i = 0; i + 1 < n; i++)
+    {
+        if (hl_wire[i] == 0x00)
+        {
+            return 0; /* COBS leaves no zero inside a frame */
+        }
+    }
+    hil_decoder_init(&dec);
+    memset(&hl_out, 0, sizeof(hl_out));
+    for (i = 0; i < n; i++)
+    {
+        hil_decode_result_t r = hil_decoder_feed(&dec, hl_wire[i], &hl_out);
+        frames += r == HIL_DECODE_FRAME;
+        if (r == HIL_DECODE_ERROR)
+        {
+            return 0;
+        }
+    }
+    return frames == 1 && hl_out.type == hl_in.type && hl_out.bus == hl_in.bus && hl_out.seq == hl_in.seq &&
+           hl_out.status == hl_in.status && hl_out.addr == hl_in.addr && hl_out.len == hl_in.len &&
+           memcmp(hl_out.payload, hl_in.payload, hl_in.len) == 0;
+}
+
+static void test_hil_link(void)
+{
+    static const uint16_t lengths[] = {0, 1, 2, 243, 244, 245, 246, 252, 253, 254, 255, 500, 507, 508, 509,
+                                       1000, 2000, HIL_MAX_PAYLOAD - 1, HIL_MAX_PAYLOAD};
+    unsigned pattern, k, bad = 0, tested = 0;
+    uint32_t seed = 12345;
+
+    for (pattern = 0; pattern < 5; pattern++)
+    {
+        for (k = 0; k < sizeof(lengths) / sizeof(lengths[0]); k++)
+        {
+            uint16_t i;
+            hl_in.type   = 0x51;
+            hl_in.bus    = (uint8_t)k;
+            hl_in.seq    = (uint8_t)(pattern * 31 + k);
+            hl_in.status = 0;
+            hl_in.addr   = pattern == 1 ? 0 : 0x01020304u + k; /* pattern 1: zeros in the header too */
+            hl_in.len    = lengths[k];
+            for (i = 0; i < hl_in.len; i++)
+            {
+                seed = seed * 1103515245u + 12345u;
+                hl_in.payload[i] = pattern == 0   ? (uint8_t)(1 + i % 255)             /* no zero: longest encoding */
+                                   : pattern == 1 ? 0                                   /* all zeros */
+                                   : pattern == 2 ? (uint8_t)(i % 254 == 253 ? 0 : 7)   /* zero after every 253 */
+                                   : pattern == 3 ? (uint8_t)(i % 255 == 254 ? 0 : 9)   /* zero after every 254 */
+                                                  : (uint8_t)(seed >> 24);              /* random */
+            }
+            tested++;
+            bad += !hil_round_trip(sizeof(hl_wire));
+        }
+    }
+    CHECK(tested == 95 && bad == 0);
+
+    /* The smallest buffer that holds the longest encoding is enough, one byte less isn't */
+    hl_in.len = HIL_MAX_PAYLOAD;
+    memset(hl_in.payload, 0x55, HIL_MAX_PAYLOAD);
+    CHECK(sizeof(hl_wire) == HIL_RAW_MAX + HIL_RAW_MAX / 254 + 2);
+    CHECK(hil_round_trip(sizeof(hl_wire)));
+    CHECK(hil_encode(&hl_in, hl_wire, sizeof(hl_wire) - 1) == 0);
+    hl_in.len = HIL_MAX_PAYLOAD + 1;
+    CHECK(hil_encode(&hl_in, hl_wire, sizeof(hl_wire)) == 0);
+}
+
 /* ---- Umbilical ---- */
 
 static fs_time_t last_time;
@@ -639,6 +722,7 @@ int main(void)
     test_tlm_header_and_sequences();
     test_time();
     test_sched();
+    test_hil_link();
     test_umbilical();
     test_uart_reopen_on_link_up();
     test_persistence();

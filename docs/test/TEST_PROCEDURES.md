@@ -29,6 +29,7 @@ Every test case is automated. The steps below are the checks its script makes, i
 | [TC-15](#tc-15) | Comparison with NASA's reference ADCS | `sil:reference` | 2 | blocked |
 | [TC-16](#tc-16) | OBC on the Pico, alone on the bench (hardware in the loop) | `hil:pico-bench` | 5 | automated |
 | [TC-17](#tc-17) | Restart in flight | `sil:restart` | 4 | automated |
+| [TC-18](#tc-18) | Resource budget on the Pico | `hil:budget` | 4 | automated |
 
 ## TC-01
 
@@ -372,3 +373,21 @@ The OBC restarts in the middle of sun pointing, as after a power glitch or a wat
 | TC-17.2 | Actuators off after the restart | all three wheels and all three magnetorquers commanded to zero within 10 s of the restarted OBC's first telemetry | SYS-03 |
 | TC-17.3 | Waits in SAFE | SAFE for 60 s with no command, rate below the tumble threshold | SYS-03 |
 | TC-17.4 | Sun pointing on command | OBC_SET_MODE SUN_POINT: converged, Sun angle < 5 deg by 42's truth within 5 min | SYS-02 |
+
+## TC-18
+
+**Resource budget on the Pico**
+
+The flight software's use of the Pico's flash, RAM, stack and processor time, over a whole campaign including its fault-injection tests, against the margins of SYS-09.
+
+- **Stage:** `hil:budget`
+- **Script:** `tests/system/check_budget.py`
+- **Configuration:** The records of a campaign with the OBC on the Pico (tests/run_all.sh --pico): the firmware's section sizes, recorded when it was built, and the OBC's once-a-minute resource reports from every stage
+- **Runs in:** HIL only (a Pico on USB)
+
+| Step | Check | Pass criterion | Requirements |
+|---|---|---|---|
+| TC-18.1 | Flash | code and initialised data at most 50 % of 4 MB | SYS-09 |
+| TC-18.2 | RAM | static data at most 50 % of 520 KB | SYS-09 |
+| TC-18.3 | Stack | deepest use over the campaign at most 75 % of the reserved stack | SYS-09 |
+| TC-18.4 | Processor time | time not spent sleeping: mean at most 50 %, at most 80 % in any minute | SYS-09 |

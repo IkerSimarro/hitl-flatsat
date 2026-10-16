@@ -34,6 +34,7 @@ TIMING_DEV = re.compile(r"device round trips: (\d+) bus transactions, mean ([\d.
                         r"longest ([\d.]+) ms")
 TIMING_ECHO = re.compile(r"umbilical echo: (\d+) heartbeats, round trip mean ([\d.]+) ms, longest ([\d.]+) ms")
 TIMING_CMD = re.compile(r"commands: (\d+) run, queue wait mean ([\d.]+) ms, longest ([\d.]+) ms")
+TIMING_RES = re.compile(r"resources: processor used ([\d.]+) %; stack deepest (-?\d+) of (-?\d+) bytes reserved")
 
 
 def latest_run():
@@ -56,7 +57,7 @@ def read_results(run):
 
 def read_timing(run):
     """The OBC's once-a-minute timing reports in every stage of a run (<stage>.d/obc.log)."""
-    t = {"tasks": {}, "cpu": [], "bus": [], "uart": [], "echo": [], "cmd": []}
+    t = {"tasks": {}, "cpu": [], "bus": [], "uart": [], "echo": [], "cmd": [], "used": [], "stack": None}
     for log in sorted(run.glob("*.d/obc.log")):
         for line in log.read_text(errors="replace").splitlines():
             m = TIMING_TASKS.search(line)
@@ -65,6 +66,11 @@ def read_timing(run):
                     name, ms = item.rsplit(" ", 1)
                     t["tasks"][name] = max(t["tasks"].get(name, 0), int(ms))
                 t["cpu"].append(int(m.group(2)))
+            m = TIMING_RES.search(line)
+            if m:
+                t["used"].append(float(m.group(1)))
+                if int(m.group(3)) > 0:
+                    t["stack"] = (max(int(m.group(2)), (t["stack"] or (0, 0))[0]), int(m.group(3)))
             for key, rx, groups in (("bus", TIMING_DEV, (1, 2, 3)), ("uart", TIMING_DEV, (4, 5, 6)),
                                     ("echo", TIMING_ECHO, (1, 2, 3)), ("cmd", TIMING_CMD, (1, 2, 3))):
                 m = rx.search(line)
@@ -335,7 +341,12 @@ def timing_section(runs, number, doc):
 
     def row(label, f):
         o.append(f"| {label} | " + " | ".join(f(t) for _, t in runs) + " |")
-    row("Busy time per second, mean / most", lambda t: f"{sum(t['cpu']) / len(t['cpu']):.0f} / {max(t['cpu'])} %")
+    row("Busy time per second (incl. waiting for replies), mean / most",
+        lambda t: f"{sum(t['cpu']) / len(t['cpu']):.0f} / {max(t['cpu'])} %")
+    row("Processor time used (not sleeping), mean / most",
+        lambda t: f"{sum(t['used']) / len(t['used']):.1f} / {max(t['used']):.1f} %" if t["used"] else "–")
+    row("Stack, deepest / reserved",
+        lambda t: f"{t['stack'][0]} / {t['stack'][1]} bytes" if t["stack"] else "– (the operating system's)")
     row("Command queue wait", lambda t: timing_summary(t["cmd"]))
     row("Device bus transaction (I2C, SPI, CAN)", lambda t: timing_summary(t["bus"]))
     row("Device UART exchange (incl. the quiet time ending a reply)", lambda t: timing_summary(t["uart"]))

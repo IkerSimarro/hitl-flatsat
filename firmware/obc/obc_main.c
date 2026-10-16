@@ -163,6 +163,19 @@ static void task_timing(void)
         fs_hal_log("commands: %u run, queue wait mean %.1f ms, longest %.1f ms", (unsigned)count, mean_us / 1000.0,
                    max_us / 1000.0);
     }
+    {
+        /* Processor time actually used: everything but sleeping (waits for replies sleep in short steps) */
+        static uint64_t last_us, last_idle_us;
+        uint64_t        now = fs_hal_time_us(), idle = fs_hal_idle_us();
+        if (last_us != 0 && now > last_us)
+        {
+            fs_hal_log("resources: processor used %.1f %%; stack deepest %d of %d bytes reserved, %d available",
+                       100.0 * (1.0 - (double)(idle - last_idle_us) / (double)(now - last_us)), fs_hal_stack_used(),
+                       fs_hal_stack_reserved(), fs_hal_stack_available());
+        }
+        last_us      = now;
+        last_idle_us = idle;
+    }
     for (i = 0; i < sizeof(tasks) / sizeof(tasks[0]); i++)
     {
         if (tasks[i].overruns > 0)

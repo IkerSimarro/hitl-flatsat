@@ -24,6 +24,7 @@ Verification methods: T test, A analysis, I inspection, D demonstration.
 | [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14, TC-16, TC-17 |
 | [SYS-07](#sys-07) | RF link and ground segment | T, D | TC-01, TC-02, TC-09, TC-10, TC-11 |
 | [SYS-08](#sys-08) | Physical reaction wheel | A, T | TC-02, TC-06, TC-12, TC-13 |
+| [SYS-09](#sys-09) | Resource margins | T | TC-18 |
 
 ## SYS-01
 
@@ -154,3 +155,15 @@ The ADCS node shall bring the physical reaction wheel within 20 rpm of a command
 - [TC-06](../test/TEST_PROCEDURES.md#tc-06) CAN nodes, FlatSat power and the physical wheel: steps 06.3, 06.5, 06.6, 06.10
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.5
 - [TC-13](../test/TEST_PROCEDURES.md#tc-13) FlatSat power measurement and wheel performance: steps 13.2, 13.3, 13.4
+
+## SYS-09
+
+**Resource margins**
+
+On its target, the OBC flight software shall use at most half of the flash and of the RAM, its deepest stack at most three quarters of the stack reserved for it, and on average at most half of the processor's time (at most 80 % in any minute).
+
+*Rationale.* The drivers for the FlatSat's own boards are still to come and must fit. A stack that outgrows its reservation silently overwrites whatever lies below it (NCR-023). The OBC must keep up with its 5 Hz control cycle and its commands under load.
+
+*Verification.* Test:
+
+- [TC-18](../test/TEST_PROCEDURES.md#tc-18) Resource budget on the Pico: steps 18.1, 18.2, 18.3, 18.4

@@ -62,12 +62,14 @@ STAGES=(
     "sil:orbit        sil/sil.sh '$NODES python3 tests/system/test_orbit.py'"
     "e2e:cosmos       tests/cosmos/test_cosmos_e2e.sh"
     "hil:pico-bench   tools/pico/build.sh > /dev/null && tools/pico/flash.sh && SIL_UMB_DEV=/dev/ttyACM0 SIL_UMB_CAN= tools/pico/attach.sh -- sil/sil.sh 'python3 tests/system/test_pico_bench.py'"
+    "hil:budget       python3 tests/system/check_budget.py $LOG"
 )
 
 LONG="sil:orbit"         # only with "all" or by name (about 100 minutes)
 BLOCKED="sil:reference"  # only by name: its test case is blocked (TC-15, NCR-015)
-HARDWARE="hil:pico-bench" # needs a Pico on USB: with --pico, or by name (tests/run_all.sh hil)
+HARDWARE="hil:budget hil:pico-bench" # need a Pico on USB: with --pico, or by name (tests/run_all.sh hil)
 SIL_ONLY="sil:devices"    # tests the Linux build's drivers: not with --pico
+PICO_ONLY="hil:budget"    # reads the --pico run's own records: only with --pico, last
 
 selected()
 {
@@ -76,6 +78,8 @@ selected()
     if [ $CONFIG = hil-pico ]; then
         [[ " $SIL_ONLY " == *" $name "* ]] && return 1
         hw=""
+    else
+        [[ " $PICO_ONLY " == *" $name "* ]] && return 1
     fi
     [ $# -eq 0 ] && [[ " $LONG $BLOCKED $hw " != *" $name "* ]] && return 0
     [ "${1:-}" = all ] && [[ " $BLOCKED $hw " != *" $name "* ]] && return 0
@@ -89,6 +93,8 @@ if [ $CONFIG = hil-pico ]; then
     echo "==== Pico: build and flash"
     { tools/pico/build.sh && tools/pico/flash.sh; } > "$LOG/pico-flash.log" 2>&1 ||
         { echo "Pico build or flash failed: see $LOG/pico-flash.log"; exit 1; }
+    # Section sizes of the firmware under test, for the resource budget (hil:budget, TC-18)
+    docker run --rm -v "$ROOT:$ROOT" -w "$ROOT" flatsat-pico arm-none-eabi-size firmware/build-pico/obc.elf > "$LOG/pico-size.txt"
     tools/pico/attach.sh --keep &
     KEEPER=$!
     export PICO_KEEPER=1

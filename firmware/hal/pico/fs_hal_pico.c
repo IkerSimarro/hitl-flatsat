@@ -9,6 +9,10 @@
 **              it is up
 **   watchdog   the hardware watchdog; fs_hal_watchdog_kick() must run every WATCHDOG_MS
 **   LED        the on-board LED changes state at every watchdog kick: blinking means the software is running
+**   resources  idle time (time in fs_hal_sleep_us) and the deepest stack use: at start-up the memory the stack
+**              can grow into is filled with a pattern, and the deepest word no longer holding it marks the
+**              high-water mark. 4 KB are reserved below __StackTop (PICO_STACK_SIZE, the whole scratch bank Y);
+**              past that the stack would grow on through scratch bank X, also empty, down to __StackLimit
 **   reset cause  from the watchdog: a timeout, a commanded reboot (marked in a scratch register) or power-on
 **              (power, the RUN pin or the reset button)
 **   CAN        carried over the umbilical by the bridge, when it announces the bus (bridge --flatsat-can, ICD 8.1
@@ -39,6 +43,22 @@
 #define REBOOT_MAGIC  0x464C5352u /* "FLSR" in watchdog scratch 0: the last reboot was commanded */
 
 static uint8_t reset_cause;
+static uint64_t idle_us;
+
+/* Linker symbols (memmap_default.ld): the stack's top, the bottom of its 2 KB reservation, and its limit */
+extern char __StackTop[], __StackBottom[], __StackLimit[];
+#define STACK_PAINT 0x5AC4C0DEu
+
+static void stack_paint(void)
+{
+    uint32_t *p     = (uint32_t *)(void *)__StackLimit;
+    uint32_t *frame = (uint32_t *)__builtin_frame_address(0);
+
+    for (; p < frame - 64; p++) /* up to 256 bytes below this function's frame, which is in use */
+    {
+        *p = STACK_PAINT;
+    }
+}
 
 /* UART log buffer: written by fs_hal_log, drained whenever the UART can take characters */
 #define LOG_RING 4096
@@ -77,6 +97,7 @@ int fs_hal_init(int argc, char **argv)
     (void)argc;
     (void)argv;
 
+    stack_paint();
     if (watchdog_hw->scratch[0] == REBOOT_MAGIC)
     {
         reset_cause = FLATSAT_RESET_CAUSE_COMMAND;
@@ -118,8 +139,40 @@ uint64_t fs_hal_time_us(void)
 
 void fs_hal_sleep_us(uint32_t us)
 {
+    uint64_t start;
+
     log_drain();
+    start = time_us_64();
     sleep_us(us);
+    idle_us += time_us_64() - start;
+}
+
+/* ---- Resources ---- */
+
+uint64_t fs_hal_idle_us(void)
+{
+    return idle_us;
+}
+
+int fs_hal_stack_used(void)
+{
+    const uint32_t *p = (const uint32_t *)(void *)__StackLimit;
+
+    while ((const char *)p < __StackTop && *p == STACK_PAINT)
+    {
+        p++;
+    }
+    return (int)(__StackTop - (const char *)p);
+}
+
+int fs_hal_stack_reserved(void)
+{
+    return (int)(__StackTop - __StackBottom);
+}
+
+int fs_hal_stack_available(void)
+{
+    return (int)(__StackTop - __StackLimit);
 }
 
 /* ---- Umbilical ---- */

@@ -127,7 +127,10 @@ if(FLATSAT_PLATFORM STREQUAL "pico")
     # The name the PC shows for the USB device. USB buffers of 4 KB instead of the SDK's 64 bytes: with 64, every
     # telemetry packet waited for the host to collect it 64 bytes at a time, blocking the OBC (NCR-018)
     target_compile_definitions(obc PRIVATE "USBD_PRODUCT=\"FlatSat OBC\"" "USBD_MANUFACTURER=\"HITL FlatSat\""
-        CFG_TUD_CDC_TX_BUFSIZE=4096 CFG_TUD_CDC_RX_BUFSIZE=4096)
+        CFG_TUD_CDC_TX_BUFSIZE=4096 CFG_TUD_CDC_RX_BUFSIZE=4096
+        # The whole 4 KB scratch bank for the stack, not the SDK's 2 KB: measured on the Pico, it reached 1.8 KB even
+        # after the 2 KB frame buffers left it (NCR-023). The budget asks for 25 % to spare (SYS-09, TC-18).
+        PICO_STACK_SIZE=0x1000)
     # The C library's printf: the SDK's formats -0.0 and the smallest doubles as "nane-308" (NCR-017)
     pico_set_printf_implementation(obc compiler)
     pico_enable_stdio_usb(obc 1)

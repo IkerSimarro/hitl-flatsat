@@ -201,12 +201,36 @@ uint64_t fs_hal_time_us(void)
     return (mono_ns() - start_ns) / 1000u;
 }
 
+static uint64_t idle_us;
+
 void fs_hal_sleep_us(uint32_t us)
 {
     struct timespec ts;
+    uint64_t        start = fs_hal_time_us();
     ts.tv_sec  = us / 1000000u;
     ts.tv_nsec = (long)(us % 1000000u) * 1000L;
     nanosleep(&ts, NULL);
+    idle_us += fs_hal_time_us() - start;
+}
+
+uint64_t fs_hal_idle_us(void)
+{
+    return idle_us;
+}
+
+int fs_hal_stack_used(void)
+{
+    return -1;
+}
+
+int fs_hal_stack_reserved(void)
+{
+    return -1;
+}
+
+int fs_hal_stack_available(void)
+{
+    return -1;
 }
 
 /* ---- Umbilical ---- */

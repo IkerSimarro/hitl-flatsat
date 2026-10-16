@@ -26,6 +26,7 @@ A non-conformance report (NCR) records every case where the system, its test env
 | [NCR-020](#ncr-020) | 2026-10-15 | After a restart, the actuators keep their last commands and turn the spacecraft | Major | Closed |
 | [NCR-021](#ncr-021) | 2026-10-15 | A leftover USB helper grabs the Pico when it restarts into its bootloader | Minor | Closed |
 | [NCR-022](#ncr-022) | 2026-10-15 | Two test steps fail depending on timing the procedure doesn't control | Minor | Closed |
+| [NCR-023](#ncr-023) | 2026-10-16 | On the Pico, the stack outgrew its 2 KB reservation | Major | Closed |
 
 Severity: **Critical** invalidates results or risks hardware; **Major** a function doesn't meet its requirement; **Minor** degraded or cosmetic.
 
@@ -611,4 +612,29 @@ The Pico itself had to move to another USB port: Windows kept the first one in i
 **Verification.** Retest `run-20261015-195213` (`tests/run_all.sh firmware devices hardware`): TC-04 14 of 14; TC-13 4 of 4, the command within 0.5 rpm of wheel 0 / 10.
 
 **Lesson.** A step that depends on something it doesn't wait for (a bus being open, a slew being over) passes until the day it doesn't. A step should state, and wait for, the state it measures.
+
+---
+
+## NCR-023
+
+**On the Pico, the stack outgrew its 2 KB reservation**
+
+| | |
+|---|---|
+| Found by | The resource measurements added for the OBC's resource budget (SYS-09): the stack's memory is filled with a pattern at start-up, and the deepest word overwritten marks its high-water mark |
+| Item | HIL link framing (`nos3/components/hil_bridge/protocol/hil_link.c`), shared by the OBC and the bridge; the Pico build (`firmware/CMakeLists.txt`) |
+| Severity | Major: whatever lies below the stack is overwritten without any error. In this build that memory is empty, so nothing failed |
+| Status | Closed |
+
+**Observation.** In normal operation the deepest stack use was 3,564 bytes. The Pico SDK reserves 2,048 bytes for the main stack. Below the reservation the stack grew on into the scratch memory banks. This program leaves them empty, but the second core's stack or time-critical code would normally go there.
+
+**Root cause.** `hil_encode` and `hil_decoder_feed` each kept a frame-sized buffer (2,060 bytes) on the stack, and both can be active in one call chain: a device request polls the umbilical while it waits. Those sizes were chosen on Linux, where a stack is megabytes.
+
+**Correction.**
+- Frames are encoded and decoded in place, with no frame-sized buffers on the stack. COBS decoding never writes ahead of where it reads. For encoding, the raw frame is assembled at the end of the output buffer and encoded towards its start, and the encoder can't catch up with what it hasn't read. Deepest stack: 1,788 bytes.
+- The reservation is the whole 4 KB scratch bank (`PICO_STACK_SIZE`), so the budget's 25 % margin holds.
+
+**Verification.** A unit test round-trips 95 frames through the framing: every length from empty to the maximum, and the COBS edge cases (no zeros, all zeros, a zero after exactly 253 and 254 bytes, random data). It also checks the smallest buffer that holds the longest encoding, and one byte less. With the encoding gap removed on purpose, the test fails. The bridge's end-to-end test passed with the new framing. TC-18.3 over a campaign: VERIFY_STACK.
+
+**Lesson.** Code shared between a PC and a microcontroller has to be written for the smaller of the two. Only the target can measure the stack.
 
