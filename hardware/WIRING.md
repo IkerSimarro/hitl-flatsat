@@ -2,6 +2,8 @@
 
 Every connection between the FlatSat's boards, harness by harness, for the build. Pin numbers are the Pico 2's GPIO numbers, as in [PINOUT.md](PINOUT.md); parts are numbered as in the [BOM](BOM.md). Colours follow the BOM's wire set.
 
+![Wiring diagram: the power distribution from the 18650 cell through the charger, main switch and three INA219 rail monitors to each Pico; the CAN bus between the OBC, ADCS and EPS nodes with 120 Ω at both ends; the motor driver, wheel, OLED and switch lines; each wire tagged with its harness number](../docs/images/wiring.svg)
+
 | Colour | Use |
 |---|---|
 | Red | Battery positive (3.0–4.2 V), after the main switch |
