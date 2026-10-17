@@ -4,7 +4,7 @@
 
 A hardware-in-the-loop FlatSat: four real Raspberry Pi Pico 2 subsystem boards, tested against a simulated orbit from NASA's [NOS3](https://github.com/nasa/nos3) small-satellite testbed.
 
-> **Status:** the flight software runs on its first Raspberry Pi Pico 2 against NOS3 (hardware in the loop, October 2026), after a software-in-the-loop campaign against eight system requirements. The CAN, power and radio boards come next.
+> **Status:** the flight software runs on a Raspberry Pi Pico 2 against NOS3 (hardware in the loop, October 2026), after a software-in-the-loop campaign against the system requirements. The firmware for the other three boards is written, with drivers for the CAN, power-monitor and radio chips that are unit-tested against models of those chips. Assembling the boards comes next.
 
 ## What it looks like
 
@@ -20,6 +20,8 @@ The flight computer has just detumbled the spacecraft after deployment and point
 
 ## Concept
 
+![The FlatSat: NOS3 and 42 on the PC simulate space and the spacecraft's sensors; four Raspberry Pi Pico 2 boards are the real flight hardware, joined by a CAN bus, with a LoRa link to a ground modem](docs/images/system.svg)
+
 | Subsystem | Real hardware | Simulated by NOS3 |
 |---|---|---|
 | Flight computer (OBC) | Pico 2: command handling, mode management, ADCS software | Sensor data, through the USB umbilical and the HIL bridge |
@@ -33,13 +35,13 @@ The flight computer has just detumbled the spacecraft after deployment and point
 | Path | Contents |
 |---|---|
 | `nos3/` | Submodule: [fork of NOS3](https://github.com/IkerSimarro/nos3) (`hitl` branch). Adds the HIL bridge component (`components/hil_bridge`) and the `HIL=1` launch mode. |
-| `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `obc/`: flight computer software (commands, modes, events, telemetry, sensor acquisition, attitude control); `obc/adcs/`: ADCS control laws (B-dot, sun pointing, momentum management); `obc/devices/`: drivers for the NOS3-simulated sensors and actuators; `nodes/adcs/`: reaction wheel speed control node; `nodes/eps/`: power monitoring and load switch node; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN, shared-memory plant harness); `sil_plant/`: plant model of the physical FlatSat (wheel motor, 18650 cell, charger, rails); `hal/pico/`: the Raspberry Pi Pico 2 backend (USB umbilical, watchdog, status LED; CAN comes with the CAN boards); `tests/`: unit tests on a fake HAL, the SIL device test and on-target checks (`tests/pico/`). |
-| `ground/` | Ground station software (`flatsat_gs.py`): contact windows and pass prediction from 42's orbit, an RF link emulator with a flight-like link budget, and a telecommand queue. Also the RF frame code (`flatsat_rf.py`) and the generated Python codec (`flatsat_icd.py`). The COSMOS targets `FLATSAT` (umbilical) and `FLATSAT_RF` (radio), with their screens, are generated into the NOS3 fork (`nos3/components/hil_bridge/gsw/`). |
+| `firmware/` | Subsystem firmware. `common/`: CCSDS packets, mission clock, scheduler, umbilical client and the generated interface header; `obc/`: flight computer software (commands, modes, events, telemetry, sensor acquisition, attitude control); `obc/adcs/`: ADCS control laws (B-dot, sun pointing, momentum management); `obc/devices/`: drivers for the NOS3-simulated sensors and actuators; `nodes/adcs/`: reaction wheel speed control node; `nodes/eps/`: power monitoring and load switch node; `hal/linux/`: software-in-the-loop backend (pty umbilical, SocketCAN, shared-memory plant harness); `sil_plant/`: plant model of the physical FlatSat (wheel motor, 18650 cell, charger, rails); `drivers/`: drivers for the FlatSat's own chips (MCP2515 CAN controller, INA219 power monitors, SX1262 LoRa radio, wheel encoder decoder), portable and tested against models of the chips; `hal/pico/`: the Raspberry Pi Pico 2 backend for every board (USB umbilical, CAN board, watchdog, status LED, resource measurements) and the boards' pins: radio, motor, power monitors and switches; `modem/`: the ground modem, a pure radio on the ground station PC's USB port; `tests/`: unit tests on a fake HAL, the SIL device test and on-target checks (`tests/pico/`). |
+| `ground/` | Ground station software (`flatsat_gs.py`): contact windows and pass prediction from 42's orbit, an RF link emulator with a flight-like link budget, and a telecommand queue. With `--modem DEV`, the uplink and downlink go through the real ground modem instead of the emulator. Also the RF frame code (`flatsat_rf.py`) and the generated Python codec (`flatsat_icd.py`). The COSMOS targets `FLATSAT` (umbilical) and `FLATSAT_RF` (radio), with their screens, are generated into the NOS3 fork (`nos3/components/hil_bridge/gsw/`). |
 | `sil/` | Software-in-the-loop environment: NOS3 simulators, 42 and the HIL bridge in one container (`sil/sil.sh`), the plant model and CAN nodes (`sil/start_nodes.sh`), and the one-command launcher (`sil/launch.sh`) |
 | `tests/` | Unit tests, COSMOS definition cross-check and headless COSMOS end-to-end test (`tests/cosmos/`), system tests (`tests/system/`), the regression campaign (`tests/run_all.sh`) |
 | `docs/` | [Interface control document](docs/icd/ICD.md) (v1 draft) with generated [byte layouts](docs/icd/ICD_layouts.md); [ADCS design note](docs/design/ADCS_DESIGN.md); [non-conformance log](docs/ncr/NCR_LOG.md); [system requirements](docs/requirements/REQUIREMENTS.md), [test plan](docs/test/TEST_PLAN.md), [test procedures](docs/test/TEST_PROCEDURES.md) and the [test report](docs/test/report/TEST_REPORT.md) |
 | `tools/` | `icd_gen.py`: generates all interface code from `docs/icd/flatsat_icd.yaml`. `test_docs.py`: generates the requirements and test procedures from `docs/test/verification.yaml`. `test_report.py`: writes a campaign's test report (results, plots, traceability, defects). `capture_screens.sh`: screenshots of the COSMOS screens with live data. `pico/`: the Pico 2 build image and scripts to build, flash and attach the firmware. |
-| `hardware/` | [Bill of materials](hardware/BOM.md); wiring diagram and harness definition *(planned)* |
+| `hardware/` | [Bill of materials](hardware/BOM.md), [pin allocation](hardware/PINOUT.md) for all four boards and the [wiring](hardware/WIRING.md), harness by harness, with the bring-up order |
 
 ## Getting started
 
@@ -78,7 +80,7 @@ Ctrl-C in the terminal stops everything. To put the ground station elsewhere, se
 The OBC firmware also runs on a Pico 2, with its umbilical on the Pico's USB port: hardware in the loop. Under WSL the port reaches Linux through [usbipd-win](https://github.com/dorssel/usbipd-win).
 
 ```bash
-tools/pico/build.sh         # firmware/build-pico/obc.uf2 (Pico SDK 2.3.1, in Docker)
+tools/pico/build.sh         # firmware/build-pico/obc.uf2 and the other boards' (Pico SDK 2.3.1, in Docker)
 tools/pico/flash.sh         # restarts the Pico in its bootloader, copies the firmware, attaches it to WSL
 sil/launch.sh --pico        # as above, with the Pico as the flight computer (no CAN nodes yet)
 tests/run_all.sh --pico     # the whole test campaign with the OBC on the Pico (about 35 minutes)
@@ -91,6 +93,8 @@ The first time:
    `winget install --exact dorssel.usbipd-win`, then `usbipd bind --hardware-id 2e8a:0009`.
 
 The on-board LED blinks twice a second while the flight software runs. In the campaign the CAN nodes still run on the PC; the bridge carries their bus to the Pico over its USB link until the CAN boards are fitted.
+
+The same build makes the other three boards' firmware: `adcs_node.uf2`, `eps_node.uf2` and `modem.uf2`, each flashed with `tools/pico/flash.sh firmware/build-pico/<name>.uf2`. Every board looks for its add-on boards when it starts. The OBC uses its CAN board and radio when they answer, and the umbilical when they don't, so the same firmware runs on the bench and in the FlatSat. The CAN nodes print their log on their USB serial port. [WIRING.md](hardware/WIRING.md) gives the connections and the bring-up order.
 
 See [`nos3/components/hil_bridge/README.md`](nos3/components/hil_bridge/README.md) for the bridge protocol and the end-to-end test.
 
@@ -108,7 +112,7 @@ tests/run_all.sh all        # also the one-orbit endurance test (about 2½ hours
 tests/run_all.sh orbit      # only the stages whose name contains a word
 ```
 
-Each run leaves its logs, recorded data and report in `tests/logs/run-<time>/`. On GitHub, every push runs the checks that need no simulator ([CI](.github/workflows/ci.yml)): the interface definitions and documents, the firmware unit tests, and the Pico 2 firmware build, whose `obc.uf2` can be downloaded from the run. To publish a run's report: `docker run --rm -v $PWD:$PWD -w $PWD flatsat-report python tools/test_report.py tests/logs/run-<time> --out docs/test/report`.
+Each run leaves its logs, recorded data and report in `tests/logs/run-<time>/`. On GitHub, every push runs the checks that need no simulator ([CI](.github/workflows/ci.yml)): the interface definitions and documents, the firmware unit tests, and the Pico 2 firmware build for all four boards, whose `.uf2` files can be downloaded from the run. To publish a run's report: `docker run --rm -v $PWD:$PWD -w $PWD flatsat-report python tools/test_report.py tests/logs/run-<time> --out docs/test/report`.
 
 The main stages one by one (the [test procedures](docs/test/TEST_PROCEDURES.md) give every stage's set-up):
 

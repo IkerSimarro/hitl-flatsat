@@ -2,17 +2,17 @@
 
 | | |
 |---|---|
-| Version | 1.0 (2026-10-01) |
+| Version | 1.1 (2026-10-16) |
 | Status | Ready to order. Prices are approximate and were checked in October 2026 where a source is linked. |
 
-Interfaces and node roles are defined in the [ICD](../docs/icd/ICD.md). Choices favour boards that plug onto the Pico with no soldering and are safe at 3.3 V, so the riskiest parts of the build need no rework.
+Interfaces and node roles are defined in the [ICD](../docs/icd/ICD.md); every pin is in [PINOUT.md](PINOUT.md) and every connection in [WIRING.md](WIRING.md). Choices favour boards that plug onto the Pico with no soldering and are safe at 3.3 V, so the riskiest parts of the build need no rework.
 
 ## 1. FlatSat
 
 | # | Qty | Part | Used by | Approx. € | Where | Notes |
 |---|---|---|---|---|---|---|
-| 1 | 4 | Raspberry Pi Pico 2 **H** (pre-soldered headers) | OBC, ADCS, EPS, ground modem | 4 × 7 | Kubii, Botland | One already ordered; buy 3 more |
-| 2 | 3 | Waveshare **Pico-CAN-B** (MCP2515 + 3.3 V SIT65HVD230 transceiver, 16 MHz crystal) | OBC, ADCS, EPS | 3 × 12.50 | [Botland](https://botland.store/raspberry-pi-pico-hat-communications/22827-can-bus-module-for-raspberry-pi-pico-waveshare-23775.html) | No soldering. Uses GP4–GP7 (SPI0). |
+| 1 | 4 | Raspberry Pi Pico 2 **H** (pre-soldered headers) | OBC, ADCS, EPS, ground modem | 4 × 7 | Kubii, Botland | All four bought |
+| 2 | 3 | Waveshare **Pico-CAN-B** (MCP2515 + 3.3 V SIT65HVD230 transceiver, 16 MHz crystal) | OBC, ADCS, EPS | 3 × 12.50 | [Botland](https://botland.store/raspberry-pi-pico-hat-communications/22827-can-bus-module-for-raspberry-pi-pico-waveshare-23775.html) | No soldering. Uses GP4–GP7 (SPI0); interrupt on GP21 or GP22 (jumper), which the firmware doesn't need: it polls. |
 | 3 | 2 | Waveshare **Pico-LoRa-SX1262-868M** | OBC, ground modem | 2 × 17 | Amazon.es, Waveshare store | Uses GP10–12 (SPI1), GP2, GP3, GP15, GP20, GP26; no clash with the CAN board. **Check that each includes an 868 MHz antenna.** |
 | 4 | 1 | Waveshare Pico dual or quad expander | OBC (Pico + CAN + LoRa side by side) | 10 | Amazon.es, Botland | Optional: a breadboard works, but this looks much tidier |
 | 5 | 3 | INA219 current/voltage sensor breakout (I2C, 3.3 V OK) | EPS | 3 × 2 | AliExpress, Amazon.es | Headers need soldering. Give each a different I2C address with the A0/A1 pads. |
@@ -61,12 +61,13 @@ Interfaces and node roles are defined in the [ICD](../docs/icd/ICD.md). Choices 
 
 These behave like power switches for every test in the campaign. Upgrading to real high-side MOSFET switches is a stretch goal.
 
-**Pins to confirm when the boards arrive**
-- The Pico-CAN-B interrupt pin isn't documented. The firmware can poll the MCP2515 over SPI instead, so this doesn't block anything.
+**Pins confirmed before ordering**
+- Pico-CAN-B: SCK GP6, MOSI GP7, MISO GP4, CS GP5; the interrupt goes to GP21 or GP22 by a jumper. The firmware polls the MCP2515, so either position works.
+- Pico-LoRa-SX1262: the module's TCXO runs from DIO3 at 1.7 V and DIO2 switches its antenna; both checked against two working ports of this board.
 
 ## 4. Order status
 
 | Item | Status |
 |---|---|
-| Pico 2 H × 1 | Ordered 2026-10-01 |
-| Everything else | To order |
+| Pico 2 × 4 | Bought |
+| Everything else | To order after the Japan trip (from about 30 October 2026). Every driver for these parts is written and unit-tested against a model of its chip, so the build starts from tested software. |

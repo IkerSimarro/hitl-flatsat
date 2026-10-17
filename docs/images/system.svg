@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 600" width="1000" height="600" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <title>HITL FlatSat system: NOS3 on the PC simulates space and the spacecraft's sensors; four Raspberry Pi Pico 2 boards are the real flight hardware</title>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555"/>
+    </marker>
+  </defs>
+  <rect width="1000" height="600" fill="#ffffff"/>
+
+  <!-- PC: simulation and ground segment -->
+  <rect x="20" y="50" width="370" height="490" rx="10" fill="#f4f1fa" stroke="#6b4fa8" stroke-width="1.5"/>
+  <text x="35" y="75" font-size="15" font-weight="bold" fill="#3d2a6b">PC: NOS3 in Docker (WSL2)</text>
+  <g fill="#ffffff" stroke="#6b4fa8">
+    <rect x="40" y="95" width="330" height="58" rx="6"/>
+    <rect x="40" y="168" width="330" height="74" rx="6"/>
+    <rect x="40" y="257" width="330" height="58" rx="6"/>
+    <rect x="40" y="370" width="330" height="58" rx="6"/>
+    <rect x="40" y="443" width="330" height="74" rx="6"/>
+  </g>
+  <g fill="#222">
+    <text x="55" y="118" font-weight="bold">42 dynamics</text>
+    <text x="55" y="138">orbit, attitude, Sun, magnetic field: the truth</text>
+    <text x="55" y="191" font-weight="bold">NOS3 device simulators</text>
+    <text x="55" y="211">gyro, magnetometer, Sun sensors, star tracker,</text>
+    <text x="55" y="229">GPS, reaction wheels, magnetorquers, EPS</text>
+    <text x="55" y="280" font-weight="bold">HIL bridge</text>
+    <text x="55" y="300">the simulated devices' buses, over USB</text>
+    <text x="55" y="393" font-weight="bold">COSMOS</text>
+    <text x="55" y="413">commands and telemetry, umbilical and radio</text>
+    <text x="55" y="466" font-weight="bold">Ground station software</text>
+    <text x="55" y="486">contact windows from 42's orbit, link budget,</text>
+    <text x="55" y="504">telecommand queue</text>
+  </g>
+  <g stroke="#6b4fa8" stroke-width="1.5" fill="none" marker-end="url(#arrow)">
+    <line x1="205" y1="153" x2="205" y2="166"/>
+    <line x1="205" y1="242" x2="205" y2="255"/>
+    <line x1="205" y1="428" x2="205" y2="441"/>
+  </g>
+  <text x="215" y="346" fill="#3d2a6b" font-size="12">telemetry ↑ ↓ commands</text>
+  <line x1="205" y1="315" x2="205" y2="368" stroke="#6b4fa8" stroke-width="1.5" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+
+  <!-- Flight hardware -->
+  <g fill="#eef5fc" stroke="#2c6fb7" stroke-width="1.5">
+    <rect x="470" y="95" width="220" height="150" rx="10"/>
+    <rect x="470" y="380" width="230" height="160" rx="10"/>
+    <rect x="725" y="380" width="255" height="160" rx="10"/>
+    <rect x="760" y="95" width="220" height="110" rx="10"/>
+  </g>
+  <g fill="#1d3f66">
+    <text x="485" y="120" font-size="15" font-weight="bold">OBC (flight computer)</text>
+    <text x="485" y="142">Pico 2: flight software</text>
+    <text x="485" y="160">modes, attitude control, FDIR</text>
+    <text x="485" y="184">+ CAN board (MCP2515)</text>
+    <text x="485" y="202">+ LoRa radio (SX1262)</text>
+    <text x="485" y="220">+ OLED status display</text>
+
+    <text x="485" y="405" font-size="15" font-weight="bold">ADCS node</text>
+    <text x="485" y="427">Pico 2: wheel speed control</text>
+    <text x="485" y="451">+ CAN board</text>
+    <text x="485" y="469">+ DRV8833 motor driver</text>
+    <text x="485" y="487">+ N20 reaction wheel, encoder</text>
+    <text x="485" y="511" font-size="12" fill="#3b5f86">mirrors simulated wheel 0 at 1:10</text>
+
+    <text x="740" y="405" font-size="15" font-weight="bold">EPS node</text>
+    <text x="740" y="427">Pico 2: power monitoring, switches</text>
+    <text x="740" y="451">+ CAN board</text>
+    <text x="740" y="469">+ 3 × INA219 rail monitors</text>
+    <text x="740" y="487">+ TP4056 charger, 18650 cell</text>
+    <text x="740" y="511" font-size="12" fill="#3b5f86">powers every board; switches the</text>
+    <text x="740" y="527" font-size="12" fill="#3b5f86">ADCS node and its motor (fault tests)</text>
+
+    <text x="775" y="120" font-size="15" font-weight="bold">Ground modem</text>
+    <text x="775" y="142">Pico 2 + LoRa radio (SX1262)</text>
+    <text x="775" y="160">a pure radio on the ground</text>
+    <text x="775" y="178">station PC's USB port</text>
+  </g>
+
+  <!-- Umbilical -->
+  <line x1="370" y1="286" x2="466" y2="205" stroke="#555" stroke-width="2.5" marker-end="url(#arrow)" marker-start="url(#arrow)"/>
+  <text x="393" y="253" font-size="12" fill="#333" transform="rotate(-40 393 253)">USB umbilical</text>
+
+  <!-- CAN bus -->
+  <line x1="585" y1="245" x2="585" y2="320" stroke="#c48a00" stroke-width="2.5"/>
+  <line x1="500" y1="320" x2="940" y2="320" stroke="#c48a00" stroke-width="4"/>
+  <line x1="585" y1="320" x2="585" y2="378" stroke="#c48a00" stroke-width="2.5"/>
+  <line x1="852" y1="320" x2="852" y2="378" stroke="#c48a00" stroke-width="2.5"/>
+  <text x="640" y="312" fill="#8a6100" font-weight="bold">CAN bus, 500 kbit/s</text>
+  <text x="640" y="342" fill="#8a6100" font-size="12">heartbeats, wheel commands, power telemetry</text>
+
+  <!-- RF link -->
+  <line x1="694" y1="150" x2="756" y2="150" stroke="#c0392b" stroke-width="2.5" stroke-dasharray="5 4" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="725" y="140" fill="#9c2e22" font-weight="bold" text-anchor="middle">LoRa</text>
+  <text x="725" y="170" fill="#9c2e22" font-size="11" text-anchor="middle">869.5 MHz</text>
+
+  <!-- Modem to ground station software -->
+  <path d="M865,95 L865,30 L205,30" fill="none" stroke="#555" stroke-width="2"/>
+  <path d="M205,30 L205,48" fill="none" stroke="#555" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="440" y="23" fill="#333" font-size="12">USB: radio frames to and from the ground station software</text>
+
+  <!-- Legend -->
+  <rect x="40" y="562" width="14" height="14" fill="#f4f1fa" stroke="#6b4fa8"/>
+  <text x="60" y="574" fill="#333">simulated: NASA NOS3 and 42 on the PC</text>
+  <rect x="420" y="562" width="14" height="14" fill="#eef5fc" stroke="#2c6fb7"/>
+  <text x="440" y="574" fill="#333">real hardware: Raspberry Pi Pico 2 boards</text>
+</svg>
