@@ -118,6 +118,12 @@ uint32_t dev_gps_crc_errors(void);
 
 int dev_radio_send(const uint8_t *frame, size_t len);
 int dev_radio_set_power(int8_t dbm);
+/*
+** A frame the radio received: its length (the frame in buf, rssi in dBm, snr in 0.25 dB steps), or 0. Frames that
+** come over the umbilical arrive through its handler instead. Call it on every main loop pass: it also ends
+** transmissions.
+*/
+int dev_radio_poll(uint8_t *buf, size_t max, int16_t *rssi, int8_t *snr);
 
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 

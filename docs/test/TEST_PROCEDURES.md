@@ -13,7 +13,7 @@ Every test case is automated. The steps below are the checks its script makes, i
 | Test case | Title | Stage | Steps | Status |
 |---|---|---|---|---|
 | [TC-01](#tc-01) | Interface definitions | `unit:icd, unit:cosmos-defs` | 4 | automated |
-| [TC-02](#tc-02) | Firmware unit tests | `unit:firmware` | 3 | automated |
+| [TC-02](#tc-02) | Firmware unit tests | `unit:firmware` | 4 | automated |
 | [TC-03](#tc-03) | HIL bridge end to end (test environment) | `e2e:bridge` | 8 | automated |
 | [TC-04](#tc-04) | Sensor and actuator drivers against 42 truth | `sil:devices` | 14 | automated |
 | [TC-05](#tc-05) | Commanding and telemetry over the umbilical | `sil:umbilical` | 12 | automated |
@@ -44,7 +44,7 @@ The interface code generated from the ICD is up to date, the Python codec and RF
 | Step | Check | Pass criterion | Requirements |
 |---|---|---|---|
 | TC-01.1 | Generated files up to date | icd_gen --check reports no stale file | SYS-06 |
-| TC-01.2 | Codec and RF unit tests | all Python unit tests pass | SYS-06, SYS-07 |
+| TC-01.2 | Codec and RF unit tests | all Python unit tests pass (codec, RF frames and link model, the ground modem interface) | SYS-06, SYS-07 |
 | TC-01.3 | COSMOS definitions match the codec | every packet decodes and encodes identically | SYS-06 |
 | TC-01.4 | COSMOS screens match the definitions | every widget and button names an existing item or command | SYS-06 |
 
@@ -52,10 +52,10 @@ The interface code generated from the ICD is up to date, the Python codec and RF
 
 **Firmware unit tests**
 
-The flight libraries pass their unit tests on a fake HAL, and the wheel speed loop and ADCS laws meet their performance in closed loop with plant models.
+The flight libraries pass their unit tests on a fake HAL, the wheel speed loop and ADCS laws meet their performance in closed loop with plant models, and the drivers for the FlatSat's own chips work against register-level models of those chips.
 
 - **Stage:** `unit:firmware`
-- **Script:** `firmware/build/test_common, test_wheel_ctrl, test_adcs`
+- **Script:** `firmware/build/test_common, test_wheel_ctrl, test_adcs, test_drivers`
 - **Runs in:** SIL and HIL (`tests/run_all.sh --pico`)
 
 | Step | Check | Pass criterion | Requirements |
@@ -63,6 +63,7 @@ The flight libraries pass their unit tests on a fake HAL, and the wheel speed lo
 | TC-02.1 | Common flight libraries | all checks pass (CCSDS, time, scheduler, umbilical, persistence, CAN, node protocol, RF frames) | SYS-04, SYS-06, SYS-07 |
 | TC-02.2 | Wheel speed loop in closed loop | 300 rpm step settles within 5 % in < 1.5 s with < 10 % overshoot; no wind-up | SYS-08 |
 | TC-02.3 | ADCS laws in closed loop | detumble from 5.4-10.2 deg/s to < 2 deg/s in < 120 s; sun pointing within 2 deg in < 150 s; eclipse damping; momentum dump | SYS-01, SYS-02 |
+| TC-02.4 | FlatSat chip drivers against chip models | all checks pass (MCP2515 CAN controller, INA219 power monitors, wheel encoder decoding, SX1262 radio) | SYS-04, SYS-05, SYS-07, SYS-08 |
 
 ## TC-03
 

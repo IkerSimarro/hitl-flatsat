@@ -141,6 +141,21 @@ int obc_comms_queue(const uint8_t *pkt, size_t len)
     return 1;
 }
 
+/* Frames from the radio itself (on the Pico with its radio board); over the umbilical they arrive through
+** obc_comms_on_rx from its handler */
+void obc_comms_poll(void)
+{
+    static uint8_t frame[FS_RF_MAX_FRAME]; /* static: frame buffers stay off the stack (NCR-023) */
+    int16_t        rssi = 0;
+    int8_t         snr  = 0;
+    int            n    = dev_radio_poll(frame, sizeof(frame), &rssi, &snr);
+
+    if (n > 0)
+    {
+        obc_comms_on_rx(frame, (size_t)n, rssi, snr);
+    }
+}
+
 /* Called from the umbilical receive handler: no bus access here */
 void obc_comms_on_rx(const uint8_t *frame, size_t len, int16_t rssi, int8_t snr)
 {

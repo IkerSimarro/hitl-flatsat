@@ -48,10 +48,14 @@ add_library(obc_devices STATIC
     obc/devices/dev_rw.c
     obc/devices/dev_eps.c
     obc/devices/dev_trq.c
-    obc/devices/dev_radio.c
 )
 target_include_directories(obc_devices PUBLIC obc/devices)
 target_link_libraries(obc_devices PUBLIC fs_common)
+
+# Drivers for the FlatSat's own chips: CAN controller, power monitors, radio (and the wheel encoder's decoder, a
+# header). Portable: the Pico binds them to its pins (hal/pico), the unit tests to models of the chips.
+add_library(fs_drivers STATIC drivers/mcp2515.c drivers/ina219.c drivers/sx1262.c)
+target_include_directories(fs_drivers PUBLIC drivers common/include)
 
 # ADCS control laws: pure maths, shared by the OBC and the closed-loop unit test
 add_library(adcs_law STATIC obc/adcs/adcs_law.c)
@@ -72,6 +76,8 @@ set(OBC_SOURCES
 
 if(FLATSAT_PLATFORM STREQUAL "linux")
     add_library(fs_hal STATIC hal/linux/fs_hal_linux.c hal/linux/sil_harness.c)
+    # The radio: over the umbilical to the ground station's link emulator (on the Pico, hal/pico/dev_radio_pico.c)
+    target_sources(obc_devices PRIVATE obc/devices/dev_radio.c)
     target_include_directories(fs_hal PUBLIC common/include hal/linux)
     target_link_libraries(fs_hal PUBLIC util rt) # openpty, shm_open
 
@@ -99,6 +105,11 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     add_executable(test_adcs tests/test_adcs.c)
     target_link_libraries(test_adcs adcs_law)
     add_test(NAME test_adcs COMMAND test_adcs)
+    add_executable(test_drivers tests/test_drivers.c tests/fake_mcp2515.c tests/fake_ina219.c tests/fake_sx1262.c
+        tests/fake_hal.c)
+    target_include_directories(test_drivers PRIVATE tests)
+    target_link_libraries(test_drivers fs_drivers fs_common m)
+    add_test(NAME test_drivers COMMAND test_drivers)
 
     # OBC flight software, software-in-the-loop build
     add_executable(obc ${OBC_SOURCES})
@@ -114,30 +125,60 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
 endif()
 
 if(FLATSAT_PLATFORM STREQUAL "pico")
-    foreach(lib fs_common obc_devices adcs_law)
+    foreach(lib fs_common obc_devices adcs_law fs_drivers)
         target_compile_options(${lib} PRIVATE ${FLATSAT_WARNINGS})
     endforeach()
+    # The Pico back ends include the SDK's headers, which don't pass -Wpedantic
+    set(PICO_HAL_SOURCES hal/pico/fs_hal_pico.c hal/pico/radio_pico.c hal/pico/dev_radio_pico.c
+        hal/pico/dev_motor_pico.c hal/pico/dev_power_pico.c)
+    set_source_files_properties(${PICO_HAL_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
+    set(NODE_SOURCES nodes/adcs/adcs_main.c nodes/adcs/wheel_ctrl.c nodes/eps/eps_main.c modem/modem_main.c)
+    set_source_files_properties(${OBC_SOURCES} ${NODE_SOURCES} PROPERTIES COMPILE_OPTIONS "${FLATSAT_WARNINGS}")
 
-    # OBC flight software on the Pico 2: the umbilical is the USB port (hal/pico/fs_hal_pico.c)
-    add_executable(obc ${OBC_SOURCES} hal/pico/fs_hal_pico.c)
-    set_source_files_properties(${OBC_SOURCES} PROPERTIES COMPILE_OPTIONS "${FLATSAT_WARNINGS}")
-    set_source_files_properties(hal/pico/fs_hal_pico.c PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
-    target_include_directories(obc PRIVATE obc)
-    target_link_libraries(obc obc_devices adcs_law fs_common pico_stdlib hardware_watchdog hardware_uart)
-    # The name the PC shows for the USB device. USB buffers of 4 KB instead of the SDK's 64 bytes: with 64, every
-    # telemetry packet waited for the host to collect it 64 bytes at a time, blocking the OBC (NCR-018)
-    target_compile_definitions(obc PRIVATE "USBD_PRODUCT=\"FlatSat OBC\"" "USBD_MANUFACTURER=\"HITL FlatSat\""
-        CFG_TUD_CDC_TX_BUFSIZE=4096 CFG_TUD_CDC_RX_BUFSIZE=4096
-        # The whole 4 KB scratch bank for the stack, not the SDK's 2 KB: measured on the Pico, it reached 1.8 KB even
-        # after the 2 KB frame buffers left it (NCR-023). The budget asks for 25 % to spare (SYS-09, TC-18).
-        PICO_STACK_SIZE=0x1000)
-    # The C library's printf: the SDK's formats -0.0 and the smallest doubles as "nane-308" (NCR-017)
-    pico_set_printf_implementation(obc compiler)
-    pico_enable_stdio_usb(obc 1)
-    pico_enable_stdio_uart(obc 0)
-    pico_add_extra_outputs(obc) # obc.uf2: drag onto the Pico's USB drive
+    # What every board's firmware shares: the HAL (hal/pico/fs_hal_pico.c, named NAME in its log), the CAN board
+    # when it is fitted, USB serial named PRODUCT, the C library's printf (the SDK's formats -0.0 and the smallest
+    # doubles as "nane-308", NCR-017) and a 4 KB stack: the OBC's reached 1.8 KB even after the 2 KB frame
+    # buffers left it, and the budget asks for 25 % to spare (NCR-023, SYS-09, TC-18)
+    function(flatsat_pico_board target name product)
+        target_sources(${target} PRIVATE hal/pico/fs_hal_pico.c)
+        target_link_libraries(${target} fs_common fs_drivers pico_stdlib hardware_watchdog hardware_uart hardware_spi)
+        target_compile_definitions(${target} PRIVATE "FS_HAL_NAME=\"${name}\"" "USBD_PRODUCT=\"${product}\""
+            "USBD_MANUFACTURER=\"HITL FlatSat\"" PICO_STACK_SIZE=0x1000)
+        pico_set_printf_implementation(${target} compiler)
+        pico_enable_stdio_usb(${target} 1)
+        pico_enable_stdio_uart(${target} 0)
+        pico_add_extra_outputs(${target}) # NAME.uf2: drag onto the Pico's USB drive, or tools/pico/flash.sh
+    endfunction()
+
+    # OBC flight software: the umbilical is the USB port; the radio is the SX1262 when its board is fitted, the
+    # umbilical otherwise
+    add_executable(obc ${OBC_SOURCES} hal/pico/radio_pico.c hal/pico/dev_radio_pico.c)
+    target_include_directories(obc PRIVATE obc hal/pico)
+    target_link_libraries(obc obc_devices adcs_law)
+    flatsat_pico_board(obc obc "FlatSat OBC")
+    # USB buffers of 4 KB instead of the SDK's 64 bytes: with 64, every telemetry packet waited for the host to
+    # collect it 64 bytes at a time, blocking the OBC (NCR-018)
+    target_compile_definitions(obc PRIVATE CFG_TUD_CDC_TX_BUFSIZE=4096 CFG_TUD_CDC_RX_BUFSIZE=4096)
+
+    # The CAN nodes, with their hardware: the reaction wheel's motor and encoder, the power monitors and switches
+    add_executable(adcs_node nodes/adcs/adcs_main.c nodes/adcs/wheel_ctrl.c hal/pico/dev_motor_pico.c)
+    target_include_directories(adcs_node PRIVATE nodes/adcs)
+    target_link_libraries(adcs_node m hardware_pwm)
+    flatsat_pico_board(adcs_node adcs "FlatSat ADCS node")
+    target_compile_definitions(adcs_node PRIVATE FS_HAL_USB_LOG=1) # its log on its USB port too
+
+    add_executable(eps_node nodes/eps/eps_main.c hal/pico/dev_power_pico.c)
+    target_include_directories(eps_node PRIVATE nodes/eps)
+    target_link_libraries(eps_node hardware_i2c)
+    flatsat_pico_board(eps_node eps "FlatSat EPS node")
+    target_compile_definitions(eps_node PRIVATE FS_HAL_USB_LOG=1)
+
+    # The ground modem: the second radio, on the ground station PC's USB port (ICD 7.5)
+    add_executable(modem modem/modem_main.c hal/pico/radio_pico.c)
+    target_include_directories(modem PRIVATE hal/pico)
+    flatsat_pico_board(modem modem "FlatSat modem") # USB names: 19 characters at most
+    target_compile_definitions(modem PRIVATE CFG_TUD_CDC_TX_BUFSIZE=1024 CFG_TUD_CDC_RX_BUFSIZE=1024)
 endif()
-
 
 if(FLATSAT_PLATFORM STREQUAL "pico")
     # On-target diagnostics, flashed only by hand: number formatting on the RP2350 (NCR-017)

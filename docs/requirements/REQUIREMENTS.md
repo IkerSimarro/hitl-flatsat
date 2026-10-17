@@ -20,7 +20,7 @@ Verification methods: T test, A analysis, I inspection, D demonstration.
 | [SYS-02](#sys-02) | Sun pointing | A, T | TC-02, TC-08, TC-14, TC-15, TC-16, TC-17 |
 | [SYS-03](#sys-03) | Sensor and actuator fault response | T | TC-07, TC-08, TC-12, TC-14, TC-16, TC-17 |
 | [SYS-04](#sys-04) | Subsystem node and bus health | T | TC-02, TC-06, TC-12, TC-16 |
-| [SYS-05](#sys-05) | Power management | T | TC-06, TC-08, TC-13, TC-14 |
+| [SYS-05](#sys-05) | Power management | T | TC-02, TC-06, TC-08, TC-13, TC-14 |
 | [SYS-06](#sys-06) | Commanding and telemetry | I, T | TC-01, TC-02, TC-04, TC-05, TC-08, TC-11, TC-14, TC-16, TC-17 |
 | [SYS-07](#sys-07) | RF link and ground segment | T, D | TC-01, TC-02, TC-09, TC-10, TC-11 |
 | [SYS-08](#sys-08) | Physical reaction wheel | A, T | TC-02, TC-06, TC-12, TC-13 |
@@ -85,7 +85,7 @@ The flight computer shall detect and report the loss of the ADCS or EPS node, in
 
 *Verification.* Test:
 
-- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.1
+- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.1, 02.4
 - [TC-06](../test/TEST_PROCEDURES.md#tc-06) CAN nodes, FlatSat power and the physical wheel: steps 06.1, 06.5, 06.7, 06.8, 06.9
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.3, 12.4, 12.5
 - [TC-16](../test/TEST_PROCEDURES.md#tc-16) OBC on the Pico, alone on the bench (hardware in the loop): steps 16.2
@@ -100,6 +100,7 @@ Below 25 % simulated battery state of charge the spacecraft shall enter LOW_POWE
 
 *Verification.* Test:
 
+- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.4
 - [TC-06](../test/TEST_PROCEDURES.md#tc-06) CAN nodes, FlatSat power and the physical wheel: steps 06.2, 06.4
 - [TC-08](../test/TEST_PROCEDURES.md#tc-08) Attitude control in the loop with 42: steps 08.6, 08.7
 - [TC-13](../test/TEST_PROCEDURES.md#tc-13) FlatSat power measurement and wheel performance: steps 13.1
@@ -136,7 +137,7 @@ The spacecraft shall send a beacon every 10 s and hold events and requested data
 *Verification.* Test, Demonstration:
 
 - [TC-01](../test/TEST_PROCEDURES.md#tc-01) Interface definitions: steps 01.2
-- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.1
+- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.1, 02.4
 - [TC-09](../test/TEST_PROCEDURES.md#tc-09) RF link: steps 09.1, 09.2, 09.3, 09.4, 09.5, 09.6, 09.7, 09.8, 09.9
 - [TC-10](../test/TEST_PROCEDURES.md#tc-10) RF pass over NASA Wallops: steps 10.1, 10.2, 10.3, 10.4, 10.5, 10.6
 - [TC-11](../test/TEST_PROCEDURES.md#tc-11) Ground segment end to end (COSMOS): steps 11.9, 11.10, 11.11
@@ -151,7 +152,7 @@ The ADCS node shall bring the physical reaction wheel within 20 rpm of a command
 
 *Verification.* Analysis, Test:
 
-- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.2
+- [TC-02](../test/TEST_PROCEDURES.md#tc-02) Firmware unit tests: steps 02.2, 02.4
 - [TC-06](../test/TEST_PROCEDURES.md#tc-06) CAN nodes, FlatSat power and the physical wheel: steps 06.3, 06.5, 06.6, 06.10
 - [TC-12](../test/TEST_PROCEDURES.md#tc-12) Actuator, node and bus failures: steps 12.5
 - [TC-13](../test/TEST_PROCEDURES.md#tc-13) FlatSat power measurement and wheel performance: steps 13.2, 13.3, 13.4

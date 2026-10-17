@@ -220,6 +220,7 @@ int main(int argc, char **argv)
 
         fs_umb_poll();
         obc_can_poll();
+        obc_comms_poll();
         run_commands();
         wait_us = fs_sched_run();
         fs_hal_sleep_us(wait_us < MAX_IDLE_US ? wait_us : MAX_IDLE_US);

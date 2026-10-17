@@ -16,4 +16,5 @@ run()
 run TC-02.1 test_common "common flight libraries"
 run TC-02.2 test_wheel_ctrl "wheel speed loop in closed loop"
 run TC-02.3 test_adcs "ADCS laws in closed loop"
+run TC-02.4 test_drivers "FlatSat chip drivers against chip models"
 exit $rc

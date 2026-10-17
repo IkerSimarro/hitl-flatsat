@@ -50,11 +50,17 @@ jobs:
           submodules: true
       - name: Build image (Arm compiler, Pico SDK 2.3.1, picotool)
         run: docker build -t flatsat-pico tools/pico
-      - name: Build the OBC firmware
+      - name: Build the firmware of the four boards
         run: tools/pico/build.sh
       - name: Flash and RAM used
-        run: docker run --rm -v "$PWD:$PWD" -w "$PWD" flatsat-pico arm-none-eabi-size firmware/build-pico/obc.elf
+        run: >-
+          docker run --rm -v "$PWD:$PWD" -w "$PWD/firmware/build-pico" flatsat-pico
+          arm-none-eabi-size obc.elf adcs_node.elf eps_node.elf modem.elf
       - uses: actions/upload-artifact@v7
         with:
-          name: obc-pico2
-          path: firmware/build-pico/obc.uf2
+          name: flatsat-pico2-firmware
+          path: |
+            firmware/build-pico/obc.uf2
+            firmware/build-pico/adcs_node.uf2
+            firmware/build-pico/eps_node.uf2
+            firmware/build-pico/modem.uf2

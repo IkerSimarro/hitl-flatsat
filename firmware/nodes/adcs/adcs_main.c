@@ -176,6 +176,7 @@ static void task_telemetry(void)
 static fs_task_t tasks[] = {
     {.name = "control", .period_ms = CONTROL_PERIOD_MS, .offset_ms = 0, .fn = task_control},
     {.name = "telemetry", .period_ms = TLM_PERIOD_MS, .offset_ms = 5, .fn = task_telemetry},
+    {.name = "watchdog", .period_ms = 250, .offset_ms = 0, .fn = fs_hal_watchdog_kick}, /* the Pico's: 3 s */
 };
 
 int main(int argc, char **argv)
