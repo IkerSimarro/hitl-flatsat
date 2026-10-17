@@ -7,7 +7,8 @@
 **              Setting the port to 1200 baud restarts the Pico in its USB bootloader, for reflashing.
 **   log        UART0 at 115200 baud on GP0 (TX) / GP1 (RX), through a buffer that is drained without ever waiting
 **              (a blocking write held the OBC ~17 ms per line, NCR-018), and a LOG frame on the umbilical while
-**              it is up. The CAN nodes (FS_HAL_USB_LOG) use their USB port for nothing else, so their log also goes
+**              it is up. Lines logged before the umbilical first comes up (the start-up and the probes for the
+**              add-on boards) are kept and sent when it does, marked with the time they were logged. The CAN nodes (FS_HAL_USB_LOG) use their USB port for nothing else, so their log also goes
 **              there as plain text, for any serial terminal; it is kept from start-up until a terminal opens the
 **              port, so the start-up messages aren't lost.
 **   watchdog   the hardware watchdog; fs_hal_watchdog_kick() must run every WATCHDOG_MS
@@ -392,6 +393,37 @@ void fs_hal_watchdog_kick(void)
     gpio_xor_mask(1u << PICO_DEFAULT_LED_PIN);
 }
 
+/* The log from start-up until the umbilical first comes up: NUL-separated lines, sent once it does */
+#define BOOT_LOG 1024
+static char     boot_log[BOOT_LOG];
+static unsigned boot_log_len;
+static int      boot_log_sent;
+
+static void boot_log_keep(uint64_t ms, const char *text)
+{
+    unsigned room = sizeof(boot_log) - boot_log_len;
+    int      n    = snprintf(&boot_log[boot_log_len], room, "at %lu.%03lu s: %s", (unsigned long)(ms / 1000u),
+                             (unsigned long)(ms % 1000u), text);
+
+    if (n < 0 || (unsigned)n + 1 > room)
+    {
+        boot_log[boot_log_len] = '\0'; /* full: the line is dropped; the earliest ones are kept */
+        return;
+    }
+    boot_log_len += (unsigned)n + 1;
+}
+
+static void boot_log_send(void)
+{
+    unsigned i;
+
+    boot_log_sent = 1;
+    for (i = 0; i < boot_log_len; i += (unsigned)strlen(&boot_log[i]) + 1)
+    {
+        fs_umb_log("%s", &boot_log[i]);
+    }
+}
+
 void fs_hal_log(const char *fmt, ...)
 {
     static int in_log; /* the umbilical may log while sending, and must not recurse */
@@ -415,7 +447,15 @@ void fs_hal_log(const char *fmt, ...)
     if (!in_log && fs_umb_link_up())
     {
         in_log = 1;
+        if (!boot_log_sent)
+        {
+            boot_log_send();
+        }
         fs_umb_log("%s", line + n);
         in_log = 0;
+    }
+    else if (!boot_log_sent)
+    {
+        boot_log_keep(ms, line + n);
     }
 }
