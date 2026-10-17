@@ -432,9 +432,12 @@ The ground modem is a Pico 2 with a Pico-LoRa-SX1262 board, connected over USB. 
 |---|---|---|
 | `RF_TX` | ground software → modem | RF frame to transmit |
 | `RF_RX` | modem → ground software | received RF frame; `addr` carries RSSI (`i16`, dBm) and SNR (`i8`, 0.25 dB steps), packed |
-| `HEARTBEAT`, `LOG` | as in §8.1 | |
+| `HEARTBEAT` | modem → ground software | once a second; `status` `OK` while the radio works, `BUS_ERROR` while it doesn't answer (it is retried every 5 s); `addr` = uplink frames dropped since the modem started |
+| `LOG` | modem → ground software | the modem's own messages, as in §8.1 |
 
-The modem is a pure radio: it doesn't parse frames, so all link logic lives in the ground station software.
+The modem is a pure radio: it doesn't parse frames, so all link logic lives in the ground station software. Its radio uses the §7.1 settings and listens whenever it isn't transmitting. One `RF_TX` frame can wait while another is on the air; a third is dropped and counted in `HEARTBEAT`, which the ground software's pacing never causes.
+
+With the modem, the ground station software runs as `ground/flatsat_gs.py --modem /dev/ttyACMn`. The contact rules, the duty-cycle budget and `GS_SET_LOSS` still apply. The link model no longer loses frames, because the boards share a desk, and `GS_STATUS` reports the RSSI and SNR the modem measured.
 
 In SIL there is no modem. The OBC sends `RF_TX` over the umbilical, and the bridge forwards the RF frame by UDP to the ground station software's link emulator, port 9021. The emulator applies the contact rules, the link model and the duty-cycle budget.
 

@@ -12,12 +12,18 @@ Sits between COSMOS (target FLATSAT_RF) and the radio link:
 - GS_* commands (MID 0x1A40) are executed here and never uplinked
 
 Software-in-the-loop: the link emulator talks UDP to the HIL bridge (frames to the OBC on 9020 with 4 bytes of
-RSSI/SNR metadata in front, frames from it on 9021). With hardware, a ground modem (ICD 7.5) replaces that leg.
+RSSI/SNR metadata in front, frames from it on 9021).
+
+With the real radios (--modem DEV): the ground modem (ICD 7.5) on this PC's USB port replaces that leg. Uplink frames
+go on the air, and downlink frames arrive with the RSSI and SNR the modem measured; the link model no longer loses
+frames (the boards share a desk), but contact windows and the configured random loss still apply. Frames that still
+come from the bridge (an OBC without its radio board) go through the link model as before.
 """
 import argparse
 import datetime
 import heapq
 import math
+import os
 import pathlib
 import random
 import select
@@ -25,11 +31,15 @@ import socket
 import struct
 import sys
 import time
+import tty
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import flatsat_icd as icd  # noqa: E402
 import flatsat_rf as rf  # noqa: E402
 import orbit  # noqa: E402
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "nos3" / "components" / "hil_bridge" / "support"))
+import hil_link  # noqa: E402
 
 GS_MID = icd.CMD["GS_NOOP"][0]
 HAIL_PERIOD_S = 20.0
@@ -38,6 +48,7 @@ QUEUE_EXPIRY_S = 900.0
 DUTY_BUDGET = 0.05              # ground transmitter design budget (legal limit 10 %)
 NOMINAL_RANGE_KM = 800.0        # link model outside ORBITAL mode
 PREDICT_PERIOD_S = 300.0
+MODEM_RETRY_S = 2.0
 J2000 = datetime.datetime(2000, 1, 1, 12, 0, 0)
 TRUTH_FIELDS = [("pos_n", 3), ("vel_n", 3), ("svb", 3), ("bvb", 3), ("hvb", 3), ("wn", 3), ("qn", 4),
                 ("pos_w", 3), ("vel_w", 3)]
@@ -57,6 +68,95 @@ def parse_truth(d):
         t[name] = list(struct.unpack(f">{n}d", d[off:off + 8 * n]))
         off += 8 * n
     return t
+
+
+class Modem:
+    """The ground modem (ICD 7.5): a Pico 2 with the second LoRa radio, speaking hil_link on a USB serial port.
+
+    RF_TX frames go to it to be transmitted; RF_RX frames come back with the RSSI (i16, dBm) and SNR (i8, 0.25 dB)
+    the radio measured, packed into addr. Its HEARTBEAT says whether its radio works (status OK or BUS_ERROR) and
+    how many frames it has dropped (addr); LOG frames are its own messages. A modem that is unplugged is reopened
+    every MODEM_RETRY_S.
+    """
+
+    def __init__(self, path, log):
+        self.path, self.log = path, log
+        self.fd = None
+        self.decoder = None
+        self.seq = 0
+        self.dropped = 0
+        self.radio_ok = None  # unknown until the first HEARTBEAT
+        self.next_open = 0.0
+        self.missing_reported = False
+        self.poll()
+
+    def poll(self):
+        """Opens the port if it isn't open and it is time to try."""
+        if self.fd is not None or time.monotonic() < self.next_open:
+            return
+        try:
+            self.fd = os.open(self.path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+            tty.setraw(self.fd)
+        except OSError as e:
+            if self.fd is not None:
+                os.close(self.fd)
+                self.fd = None
+            if not self.missing_reported:
+                self.log(f"ground modem {self.path}: {e.strerror}; trying every {MODEM_RETRY_S:.0f} s")
+                self.missing_reported = True
+            self.next_open = time.monotonic() + MODEM_RETRY_S
+            return
+        self.decoder, self.dropped, self.radio_ok, self.missing_reported = hil_link.Decoder(), 0, None, False
+        self.log(f"ground modem {self.path} open")
+
+    def close(self, why):
+        os.close(self.fd)
+        self.fd = None
+        self.next_open = time.monotonic() + MODEM_RETRY_S
+        self.log(f"ground modem {self.path} lost ({why}); trying every {MODEM_RETRY_S:.0f} s")
+        self.missing_reported = True
+
+    def send(self, frame):
+        if self.fd is None:
+            return False
+        self.seq = (self.seq + 1) & 0xFF
+        try:
+            os.write(self.fd, hil_link.encode(hil_link.Frame(hil_link.RF_TX, seq=self.seq, payload=frame)))
+        except OSError as e:
+            self.close(e.strerror)
+            return False
+        return True
+
+    def receive(self):
+        """[(frame, rssi dBm, snr dB)] for the frames the modem has received since the last call."""
+        if self.fd is None:
+            return []
+        try:
+            data = os.read(self.fd, 4096)
+        except BlockingIOError:
+            return []
+        except OSError as e:
+            self.close(e.strerror)
+            return []
+        if not data:
+            self.close("end of file")
+            return []
+        frames = []
+        for f in self.decoder.feed(data):
+            if f.type == hil_link.RF_RX:
+                rssi, snr = struct.unpack("<hb", struct.pack("<I", f.addr)[:3])
+                frames.append((f.payload, rssi, snr / 4.0))
+            elif f.type == hil_link.HEARTBEAT:
+                ok = f.status == 0  # OK; BUS_ERROR while the radio doesn't answer
+                if ok != self.radio_ok:
+                    self.log("ground modem: radio " + ("working" if ok else "not answering"))
+                    self.radio_ok = ok
+                if f.addr > self.dropped:
+                    self.log(f"ground modem dropped {f.addr - self.dropped} uplink frame(s)")
+                self.dropped = f.addr  # lower: the modem restarted
+            elif f.type == hil_link.LOG:
+                self.log("modem: " + f.payload.decode(errors="replace"))
+        return frames
 
 
 class GroundStation:
@@ -92,6 +192,8 @@ class GroundStation:
         self.down_rx = self._bind(a.down_port)
         self.tc_rx = self._bind(a.tc_port)
         self.tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.modem = Modem(a.modem, self.log) if a.modem else None
+        self.next_status = time.monotonic()
 
     @staticmethod
     def _bind(port):
@@ -165,7 +267,8 @@ class GroundStation:
     def on_downlink(self, frame):
         self.on_air(rf.airtime_s(len(frame)), self.receive_downlink, frame)
 
-    def receive_downlink(self, frame):
+    def receive_downlink(self, frame, measured=None):
+        """measured: (rssi dBm, snr dB) of a frame the ground modem received; the link model doesn't lose those."""
         try:
             ftype, _counter, data = rf.parse(frame)
         except rf.FrameError:
@@ -174,7 +277,10 @@ class GroundStation:
         if not self.contact:
             self.stats["DOWN_NO_CONTACT"] += 1
             return
-        rssi, snr, p = self.link()
+        if measured is None:
+            rssi, snr, p = self.link()
+        else:
+            (rssi, snr), p = measured, 1.0 - self.loss
         if self.rng.random() >= p:
             self.stats["DOWN_LOST"] += 1
             return
@@ -197,6 +303,8 @@ class GroundStation:
         t_air = rf.airtime_s(len(frame))
         if now < self.radio_free_at or self.duty() + t_air / 3600 > DUTY_BUDGET:
             return False
+        if self.modem is not None and self.modem.fd is None:
+            return False  # no ground radio: the frame waits
         self.up_counter = (self.up_counter + 1) & 0xFFFF
         self.radio_free_at = now + t_air
         self.airtime.append((now, t_air))
@@ -205,6 +313,10 @@ class GroundStation:
             self.corrupt -= 1
             frame = frame[:-1] + bytes([frame[-1] ^ 0xFF])
             self.log(f"corrupted the CRC of uplink frame {self.up_counter - 1} (fault injection)")
+        if self.modem is not None:
+            if self.rng.random() >= self.loss:  # GS_SET_LOSS still applies, as fault injection
+                self.modem.send(frame)
+            return True
         rssi, snr, p = self.link()
         if self.rng.random() < p:  # the uplink sees the same link
             meta = struct.pack(">hbB", clamp(round(rssi), -32768, 32767), clamp(round(snr * 4), -128, 127), 0)
@@ -278,27 +390,40 @@ class GroundStation:
         self.status_seq += 1
         self.send(pkt, self.a.cosmos_host, self.a.tm_port)
 
+    def step(self, timeout=0.01):
+        """One pass: whatever has arrived, frames landing, the uplink, and GS_STATUS when it is due."""
+        socks = [self.truth_rx, self.down_rx, self.tc_rx]
+        if self.modem is not None and self.modem.fd is not None:
+            socks.append(self.modem.fd)
+        ready, _, _ = select.select(socks, [], [], timeout)
+        for s in ready:
+            if isinstance(s, int):
+                for frame, rssi, snr in self.modem.receive():
+                    self.receive_downlink(frame, (rssi, snr))
+                continue
+            data = s.recv(4096)
+            if s is self.truth_rx:
+                self.on_truth(data)
+            elif s is self.down_rx:
+                self.on_downlink(data)
+            else:
+                self.on_telecommand(data)
+        if self.modem is not None:
+            self.modem.poll()
+        self.land()
+        self.service()
+        if time.monotonic() >= self.next_status:
+            self.status()
+            self.next_status += 1.0
+
     def run(self):
+        radio = (f"ground modem {self.a.modem}" if self.modem else
+                 f"link emulator, spacecraft {self.a.rf_host}:{self.a.up_port}")
         self.log(f"ground station at {self.a.lat:.4f}, {self.a.lon:.4f}, mask {self.a.mask} deg, contact "
                  f"{self.a.mode.upper()}, loss {self.loss * 100:.1f} %; COSMOS {self.a.cosmos_host}:{self.a.tm_port}, "
-                 f"spacecraft {self.a.rf_host}:{self.a.up_port}")
-        next_status = time.monotonic()
-        socks = [self.truth_rx, self.down_rx, self.tc_rx]
+                 f"{radio}")
         while True:
-            ready, _, _ = select.select(socks, [], [], 0.01)
-            for s in ready:
-                data = s.recv(4096)
-                if s is self.truth_rx:
-                    self.on_truth(data)
-                elif s is self.down_rx:
-                    self.on_downlink(data)
-                else:
-                    self.on_telecommand(data)
-            self.land()
-            self.service()
-            if time.monotonic() >= next_status:
-                self.status()
-                next_status += 1.0
+            self.step()
 
 
 def main():
@@ -319,6 +444,8 @@ def main():
     ap.add_argument("--cosmos-host", default="cosmos")
     ap.add_argument("--tc-port", type=int, default=9030)
     ap.add_argument("--tm-port", type=int, default=9031)
+    ap.add_argument("--modem", metavar="DEV", help="the ground modem's serial port (ICD 7.5), e.g. /dev/ttyACM1: "
+                    "the real radio instead of the link emulator")
     GroundStation(ap.parse_args()).run()
 
 
