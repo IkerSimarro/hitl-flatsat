@@ -49,9 +49,9 @@ The three CAN boards plug onto their Picos; the CAN controller's interrupt jumpe
 | # | From | To | Notes |
 |---|---|---|---|
 | A1 | ADCS GP16 / GP17 | DRV8833 AIN1 / AIN2 | Blue |
-| A2 | DRV8833 AOUT1 / AOUT2 | N20 motor terminals | White; swap them if the wheel turns the wrong way for a positive command (TC-13.2 shows it) |
+| A2 | DRV8833 AOUT1 / AOUT2 | N20 motor terminals | White; the direction check is in [INT-07](INTEGRATION.md#int-07-the-reaction-wheel) |
 | A3 | N20 encoder VCC / GND | ADCS 3V3 (pin 36) / GND | 3.3 V, so the encoder's outputs are 3.3 V logic |
-| A4 | Encoder A / B | ADCS GP13 / GP14 | Swap them if the speed reads negative while the wheel turns forward |
+| A4 | Encoder A / B | ADCS GP13 / GP14 | Swap them if the wheel runs away to full speed reading a negative speed ([INT-07](INTEGRATION.md#int-07-the-reaction-wheel)) |
 | A5 | DRV8833 nSLEEP | EPS GP17 and ADCS GP18 | The EPS node drives it; the ADCS node only reads it |
 | A6 | DRV8833 GND | Black bus | |
 | A7 | ADCS RUN (pin 30) | EPS GP16 | The EPS node holds it low to keep the node in reset |
@@ -85,9 +85,4 @@ The CAN board and the LoRa board both plug onto the OBC; the dual expander (BOM 
 
 ## 7. Bring-up order
 
-1. Each Pico on USB alone with its firmware: the LED blinks (the OBC, the nodes and the modem all blink it). A CAN node prints its log on its USB serial port; without its add-on board it reports "no CAN board".
-2. CAN: the three boards with only the bus connected, all on USB: each node reports "node up" in the OBC's events.
-3. EPS: the INA219s on the bench supply; the readings against the multimeter (TC-13.1's real-hardware counterpart).
-4. ADCS: the wheel in TEST mode at low speed, then the speed steps (TC-13.2).
-5. Battery: the cell, the switch, and the distribution; every board off USB.
-6. Radio: the OBC and the modem a metre apart at 2 dBm (ICD 7.1); beacons in the ground station software.
+The [integration procedure](INTEGRATION.md) adds the boards and harnesses one at a time, each with a check and a pass criterion: each Pico alone, then its add-on boards, the radio link, the CAN bus, the power monitors and battery, the wheel and fault switches, everything on the battery, and the full system under NOS3.
