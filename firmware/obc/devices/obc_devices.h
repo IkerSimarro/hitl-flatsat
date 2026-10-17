@@ -125,6 +125,18 @@ int dev_radio_set_power(int8_t dbm);
 */
 int dev_radio_poll(uint8_t *buf, size_t max, int16_t *rssi, int8_t *snr);
 
+/* ---- Status display (the OBC's OLED; in software-in-the-loop a text file) ---- */
+
+#define DEV_DISPLAY_LINES 8
+#define DEV_DISPLAY_COLS  21
+
+typedef char dev_display_text_t[DEV_DISPLAY_LINES][DEV_DISPLAY_COLS + 1];
+
+/* Puts text on the display, which dev_display_service then updates in steps; DEV_ERR_BUS without a display */
+int  dev_display_show(dev_display_text_t text); /* (not const: C can't pass a 2-D array as const) */
+/* Writes the next part of the display that changed: on the OLED one line, about 3 ms */
+void dev_display_service(void);
+
 /* ---- Reaction wheels (generic_reaction_wheel, UART, ASCII) ---- */
 
 /* UART request/reply exchanges since the last call: count, mean and longest wait for the first reply byte,

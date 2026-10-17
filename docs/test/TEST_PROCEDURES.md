@@ -63,7 +63,7 @@ The flight libraries pass their unit tests on a fake HAL, the wheel speed loop a
 | TC-02.1 | Common flight libraries | all checks pass (CCSDS, time, scheduler, umbilical, persistence, CAN, node protocol, RF frames) | SYS-04, SYS-06, SYS-07 |
 | TC-02.2 | Wheel speed loop in closed loop | 300 rpm step settles within 5 % in < 1.5 s with < 10 % overshoot; no wind-up | SYS-08 |
 | TC-02.3 | ADCS laws in closed loop | detumble from 5.4-10.2 deg/s to < 2 deg/s in < 120 s; sun pointing within 2 deg in < 150 s; eclipse damping; momentum dump | SYS-01, SYS-02 |
-| TC-02.4 | FlatSat chip drivers against chip models | all checks pass (MCP2515 CAN controller, INA219 power monitors, wheel encoder decoding, SX1262 radio) | SYS-04, SYS-05, SYS-07, SYS-08 |
+| TC-02.4 | FlatSat chip drivers against chip models | all checks pass (MCP2515 CAN controller, INA219 power monitors, wheel encoder decoding, SX1262 radio, SH1106 status display) | SYS-04, SYS-05, SYS-07, SYS-08 |
 
 ## TC-03
 

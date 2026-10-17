@@ -8,10 +8,12 @@
 #include "fake_hal.h"
 #include "fake_ina219.h"
 #include "fake_mcp2515.h"
+#include "fake_sh1106.h"
 #include "fake_sx1262.h"
 #include "ina219.h"
 #include "mcp2515.h"
 #include "quadrature.h"
+#include "sh1106.h"
 #include "sx1262.h"
 
 static int checks, failures;
@@ -299,6 +301,82 @@ static void test_sx1262(void)
     CHECK(sx1262_poll(&radio, buf, 4, &len, &rssi, &snr) == SX1262_EVENT_RX && len == 4);
 }
 
+/* ---- SH1106 OLED controller ---- */
+
+static int glyph_at(unsigned col, unsigned line, char c)
+{
+    const uint8_t *g = sh1106_glyph(c);
+    unsigned       x, y;
+
+    for (x = 0; x < 6; x++)
+    {
+        for (y = 0; y < 8; y++)
+        {
+            int want = x < 5 ? (g[x] >> y) & 1 : 0; /* the sixth column is the gap */
+            if (fake_sh1106_pixel(col * 6 + x, line * 8 + y) != want)
+            {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+static void test_sh1106(void)
+{
+    sh1106_t       oled = {.write = fake_sh1106_write, .ctx = NULL, .addr = 0x3C};
+    static uint8_t fb[SH1106_PAGES][SH1106_WIDTH];
+    unsigned       page, col, lit = 0;
+
+    /* No display: the first write isn't acknowledged */
+    fake_sh1106_reset();
+    fake_sh1106.present = 0;
+    CHECK(sh1106_init(&oled) == SH1106_ERR_I2C);
+
+    /* Start-up: on, with its charge pump, 64 rows, oriented for the breakout, and the whole memory cleared */
+    fake_sh1106_reset();
+    CHECK(sh1106_init(&oled) == SH1106_OK);
+    CHECK(fake_sh1106.display_on && fake_sh1106.dcdc_on && fake_sh1106.multiplex == 0x3F);
+    CHECK(fake_sh1106.seg_remap && fake_sh1106.com_remap);
+    for (page = 0; page < SH1106_PAGES; page++)
+    {
+        for (col = 0; col < SH1106_RAM_COLS; col++)
+        {
+            lit += fake_sh1106.ram[page][col] != 0;
+        }
+    }
+    CHECK(lit == 0);
+
+    /* A page lands on the 128 visible columns, which start at column 2; the hidden ones stay as they were */
+    memset(fake_sh1106.ram, 0xA5, sizeof(fake_sh1106.ram));
+    for (col = 0; col < SH1106_WIDTH; col++)
+    {
+        fb[3][col] = (uint8_t)col;
+    }
+    CHECK(sh1106_write_page(&oled, 3, fb[3]) == SH1106_OK);
+    CHECK(fake_sh1106.ram[3][2] == 0 && fake_sh1106.ram[3][129] == 127 && fake_sh1106.ram[3][64] == 62);
+    CHECK(fake_sh1106.ram[3][0] == 0xA5 && fake_sh1106.ram[3][1] == 0xA5 && fake_sh1106.ram[3][130] == 0xA5);
+    CHECK(fake_sh1106.ram[2][2] == 0xA5 && fake_sh1106.ram[4][2] == 0xA5);
+    CHECK(sh1106_write_page(&oled, 8, fb[3]) == SH1106_ERR_ARG);
+
+    /* Text: glyphs in 6-pixel cells, at most 21 per line; a new line clears the old one */
+    memset(fb, 0, sizeof(fb));
+    sh1106_text(fb, 1, "WWWWWWWWWWWWWWWWWWWWWWWW"); /* 24 characters */
+    sh1106_text(fb, 1, "Sun 0.06 deg");
+    sh1106_text(fb, 7, "A\x01~z");
+    for (page = 0; page < SH1106_PAGES; page++)
+    {
+        CHECK(sh1106_write_page(&oled, page, fb[page]) == SH1106_OK);
+    }
+    CHECK(glyph_at(0, 1, 'S') && glyph_at(1, 1, 'u') && glyph_at(4, 1, '0') && glyph_at(11, 1, 'g'));
+    CHECK(glyph_at(12, 1, ' ') && glyph_at(20, 1, ' ')); /* the rest of the old line is gone */
+    CHECK(glyph_at(0, 7, 'A') && glyph_at(1, 7, '?') && glyph_at(2, 7, '~') && glyph_at(3, 7, 'z'));
+    CHECK(glyph_at(0, 0, ' ') && glyph_at(0, 2, ' '));
+    CHECK(fb[1][126] == 0 && fb[1][127] == 0); /* 21 cells of 6 pixels: the last two columns stay dark */
+    sh1106_text(fb, 8, "out of range"); /* ignored */
+    CHECK(sh1106_glyph('A')[0] == 0x7E && sh1106_glyph('0')[2] == 0x49);
+}
+
 int main(void)
 {
     fake_hal_reset();
@@ -306,6 +384,7 @@ int main(void)
     test_ina219();
     test_quadrature();
     test_sx1262();
+    test_sh1106();
     printf("board drivers: %s%d checks%s\n", failures ? "" : "all ", checks, failures ? "" : " passed");
     if (failures)
     {

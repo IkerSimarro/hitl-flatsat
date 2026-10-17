@@ -140,7 +140,7 @@ test_cases:
       - {id: TC-02.1, title: "Common flight libraries", criterion: "all checks pass (CCSDS, time, scheduler, umbilical, persistence, CAN, node protocol, RF frames)", reqs: [SYS-04, SYS-06, SYS-07]}
       - {id: TC-02.2, title: "Wheel speed loop in closed loop", criterion: "300 rpm step settles within 5 % in < 1.5 s with < 10 % overshoot; no wind-up", reqs: [SYS-08]}
       - {id: TC-02.3, title: "ADCS laws in closed loop", criterion: "detumble from 5.4-10.2 deg/s to < 2 deg/s in < 120 s; sun pointing within 2 deg in < 150 s; eclipse damping; momentum dump", reqs: [SYS-01, SYS-02]}
-      - {id: TC-02.4, title: "FlatSat chip drivers against chip models", criterion: "all checks pass (MCP2515 CAN controller, INA219 power monitors, wheel encoder decoding, SX1262 radio)", reqs: [SYS-04, SYS-05, SYS-07, SYS-08]}
+      - {id: TC-02.4, title: "FlatSat chip drivers against chip models", criterion: "all checks pass (MCP2515 CAN controller, INA219 power monitors, wheel encoder decoding, SX1262 radio, SH1106 status display)", reqs: [SYS-04, SYS-05, SYS-07, SYS-08]}
 
   - id: TC-03
     title: HIL bridge end to end (test environment)

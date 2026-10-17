@@ -74,6 +74,11 @@ static void task_comms(void)
     obc_comms_task();
 }
 
+static void task_display(void)
+{
+    obc_display_task();
+}
+
 static void task_adcs_sense(void)
 {
     obc_sensors_acquire_adcs();
@@ -129,6 +134,7 @@ static fs_task_t tasks[] = {
     {.name = "adcs", .period_ms = 200, .offset_ms = 110, .fn = task_adcs},
     {.name = "star_tracker", .period_ms = 1000, .offset_ms = 610, .fn = task_star_tracker},
     {.name = "comms", .period_ms = 100, .offset_ms = 90, .fn = task_comms},
+    {.name = "display", .period_ms = 125, .offset_ms = 70, .fn = task_display},
     {.name = "adcs_auto", .period_ms = 1000, .offset_ms = 180, .fn = task_adcs_auto},
     {.name = "timing", .period_ms = 60000, .offset_ms = 190, .fn = task_timing},
 };

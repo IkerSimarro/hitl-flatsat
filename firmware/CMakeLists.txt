@@ -52,9 +52,9 @@ add_library(obc_devices STATIC
 target_include_directories(obc_devices PUBLIC obc/devices)
 target_link_libraries(obc_devices PUBLIC fs_common)
 
-# Drivers for the FlatSat's own chips: CAN controller, power monitors, radio (and the wheel encoder's decoder, a
-# header). Portable: the Pico binds them to its pins (hal/pico), the unit tests to models of the chips.
-add_library(fs_drivers STATIC drivers/mcp2515.c drivers/ina219.c drivers/sx1262.c)
+# Drivers for the FlatSat's own chips: CAN controller, power monitors, radio, OLED display (and the wheel encoder's
+# decoder, a header). Portable: the Pico binds them to its pins (hal/pico), the unit tests to models of the chips.
+add_library(fs_drivers STATIC drivers/mcp2515.c drivers/ina219.c drivers/sx1262.c drivers/sh1106.c)
 target_include_directories(fs_drivers PUBLIC drivers common/include)
 
 # ADCS control laws: pure maths, shared by the OBC and the closed-loop unit test
@@ -72,12 +72,14 @@ set(OBC_SOURCES
     obc/obc_can.c
     obc/obc_adcs.c
     obc/obc_comms.c
+    obc/obc_display.c
 )
 
 if(FLATSAT_PLATFORM STREQUAL "linux")
     add_library(fs_hal STATIC hal/linux/fs_hal_linux.c hal/linux/sil_harness.c)
-    # The radio: over the umbilical to the ground station's link emulator (on the Pico, hal/pico/dev_radio_pico.c)
-    target_sources(obc_devices PRIVATE obc/devices/dev_radio.c)
+    # The radio: over the umbilical to the ground station's link emulator (on the Pico, hal/pico/dev_radio_pico.c);
+    # the status display: a text file (on the Pico, the OLED: hal/pico/dev_display_pico.c)
+    target_sources(obc_devices PRIVATE obc/devices/dev_radio.c obc/devices/dev_display.c)
     target_include_directories(fs_hal PUBLIC common/include hal/linux)
     target_link_libraries(fs_hal PUBLIC util rt) # openpty, shm_open
 
@@ -106,7 +108,7 @@ if(FLATSAT_PLATFORM STREQUAL "linux")
     target_link_libraries(test_adcs adcs_law)
     add_test(NAME test_adcs COMMAND test_adcs)
     add_executable(test_drivers tests/test_drivers.c tests/fake_mcp2515.c tests/fake_ina219.c tests/fake_sx1262.c
-        tests/fake_hal.c)
+        tests/fake_sh1106.c tests/fake_hal.c)
     target_include_directories(test_drivers PRIVATE tests)
     target_link_libraries(test_drivers fs_drivers fs_common m)
     add_test(NAME test_drivers COMMAND test_drivers)
@@ -130,7 +132,7 @@ if(FLATSAT_PLATFORM STREQUAL "pico")
     endforeach()
     # The Pico back ends include the SDK's headers, which don't pass -Wpedantic
     set(PICO_HAL_SOURCES hal/pico/fs_hal_pico.c hal/pico/radio_pico.c hal/pico/dev_radio_pico.c
-        hal/pico/dev_motor_pico.c hal/pico/dev_power_pico.c)
+        hal/pico/dev_display_pico.c hal/pico/dev_motor_pico.c hal/pico/dev_power_pico.c)
     set_source_files_properties(${PICO_HAL_SOURCES} PROPERTIES COMPILE_OPTIONS "-Wall;-Wextra;-Werror")
     set(NODE_SOURCES nodes/adcs/adcs_main.c nodes/adcs/wheel_ctrl.c nodes/eps/eps_main.c modem/modem_main.c)
     set_source_files_properties(${OBC_SOURCES} ${NODE_SOURCES} PROPERTIES COMPILE_OPTIONS "${FLATSAT_WARNINGS}")
@@ -151,10 +153,10 @@ if(FLATSAT_PLATFORM STREQUAL "pico")
     endfunction()
 
     # OBC flight software: the umbilical is the USB port; the radio is the SX1262 when its board is fitted, the
-    # umbilical otherwise
-    add_executable(obc ${OBC_SOURCES} hal/pico/radio_pico.c hal/pico/dev_radio_pico.c)
+    # umbilical otherwise; the status display is the OLED
+    add_executable(obc ${OBC_SOURCES} hal/pico/radio_pico.c hal/pico/dev_radio_pico.c hal/pico/dev_display_pico.c)
     target_include_directories(obc PRIVATE obc hal/pico)
-    target_link_libraries(obc obc_devices adcs_law)
+    target_link_libraries(obc obc_devices adcs_law hardware_i2c)
     flatsat_pico_board(obc obc "FlatSat OBC")
     # USB buffers of 4 KB instead of the SDK's 64 bytes: with 64, every telemetry packet waited for the host to
     # collect it 64 bytes at a time, blocking the OBC (NCR-018)

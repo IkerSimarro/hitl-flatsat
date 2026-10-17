@@ -229,6 +229,10 @@ int     obc_can_node_command(uint8_t node, uint8_t cmd);
 void obc_comms_init(void);
 void obc_comms_task(void); /* 10 Hz: beacon, queued downlink, airtime budget */
 void obc_comms_poll(void); /* every main loop pass: frames from the radio, the end of each transmission */
+
+/* ---- Status display (obc_display.c) ---- */
+
+void obc_display_task(void); /* 8 Hz: new text once a second, one line of the display written per pass */
 /* A received RF frame (called from the umbilical receive handler: no bus access) */
 void obc_comms_on_rx(const uint8_t *frame, size_t len, int16_t rssi, int8_t snr);
 /* Queue a packet for the next contact; returns 0 if it can't be sent over RF */
