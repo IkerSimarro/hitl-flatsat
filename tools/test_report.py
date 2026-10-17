@@ -239,6 +239,8 @@ def plots(data, out):
 # ---- Report ----
 
 def verdict(step_ids, results, planned):
+    if not step_ids:
+        return "➖ Not tested at this level"  # e.g. the resource budget, measured only on the Pico
     states = [results.get(s, (None,))[0] for s in step_ids]
     if any(s == "FAIL" for s in states):
         return "❌ Failed"
@@ -433,7 +435,8 @@ def report(runs, out, hil=None):
                 if r["id"] in st["reqs"]:
                     res = results.get(st["id"], (None, ""))[0]
                     note = " *(informative)*" if tc.get("informative") else ""
-                    o.append(f"| {r['id']} | [{st['id']}](#{tc['id'].lower()}) | {st['title']}{note} | {ICON[res]} |")
+                    shown = ICON[res] if res or "sil" in tc.get("levels", LEVELS) else "➖ on the Pico only (§ 4)"
+                    o.append(f"| {r['id']} | [{st['id']}](#{tc['id'].lower()}) | {st['title']}{note} | {shown} |")
 
     o += ["", "## 3. Results by test case"]
     for tc in v["test_cases"]:
